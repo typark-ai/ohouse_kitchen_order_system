@@ -1,0 +1,956 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>직시공 발주 프로그램</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ["'Pretendard Variable'", "Pretendard", "Inter", "sans-serif"],
+          },
+          colors: {
+            brand: '#00A1FF',
+            'brand-weak': '#F0F8FC',
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+  <style>
+    body { font-family: 'Pretendard Variable', 'Pretendard', 'Inter', sans-serif; }
+    ::-webkit-scrollbar { height: 6px; width: 6px; }
+    ::-webkit-scrollbar-track { background: #F3F4F6; }
+    ::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #9CA3AF; }
+
+    /* 체크박스 커스텀 */
+    .cb-custom {
+      appearance: none; -webkit-appearance: none;
+      width: 16px; height: 16px;
+      border: 1.5px solid #D1D5DB;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.1s;
+      flex-shrink: 0;
+    }
+    .cb-custom:checked {
+      background: #00A1FF;
+      border-color: #00A1FF;
+    }
+    .cb-custom:checked::after {
+      content: '';
+      position: absolute;
+      left: 3px; top: 0px;
+      width: 5px; height: 9px;
+      border: 2px solid #fff;
+      border-top: none; border-left: none;
+      transform: rotate(45deg);
+    }
+    .cb-custom:indeterminate {
+      background: #00A1FF;
+      border-color: #00A1FF;
+    }
+    .cb-custom:indeterminate::after {
+      content: '';
+      position: absolute;
+      left: 2px; top: 5px;
+      width: 8px; height: 2px;
+      background: #fff;
+      border-radius: 1px;
+    }
+    .cb-custom:hover:not(:checked) { border-color: #00A1FF; }
+  </style>
+</head>
+<body class="bg-[#F9FAFB] min-h-screen">
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useMemo, useEffect, useRef, useCallback } = React;
+
+/* ───────────────────────────────────────────────
+   1. 상수 / 헬퍼
+─────────────────────────────────────────────── */
+const _kstDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }); // "YYYY-MM-DD"
+const TODAY = new Date(_kstDateStr + 'T00:00:00');
+const TODAY_STR = _kstDateStr;
+
+/* ── localStorage 유틸 ── */
+const LS_KEY = 'JIKSIGONG_DATA';
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch(e) {}
+  return [];
+}
+
+function saveData(items) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(items)); } catch(e) {}
+}
+
+function generateNewId(items) {
+  const year = new Date().getFullYear();
+  const nums = items.map(i => {
+    const m = i.id.match(/C-\d{4}-(\d+)/);
+    return m ? parseInt(m[1]) : 0;
+  });
+  const max = nums.length > 0 ? Math.max(...nums) : 0;
+  return `C-${year}-${String(max + 1).padStart(3, '0')}`;
+}
+
+function daysDiff(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  return Math.floor((d - TODAY) / (1000 * 60 * 60 * 24));
+}
+
+function isUrgentDate(dateStr) {
+  const diff = daysDiff(dateStr);
+  return diff !== null && diff <= 2;
+}
+
+function getBadgeStyle(text) {
+  if (!text) return "bg-gray-100 text-gray-500";
+  const t = text.toLowerCase();
+
+  if (
+    t.includes("반려") || t.includes("수정요청") || t.includes("수정 요청") ||
+    t.includes("긴급") || t.includes("재마감요청") || t.includes("재마감 요청")
+  ) return "bg-red-50 text-red-700 border border-red-200 font-semibold";
+
+  if (t.includes("조정") && !t.includes("긴급"))
+    return "bg-orange-50 text-orange-700 border border-orange-200 font-semibold";
+
+  if (t.includes("확정") || t.includes("완료") || t.includes("확인"))
+    return "bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold";
+
+  if (t.includes("진행") || t.includes("검토"))
+    return "bg-brand-weak text-brand border border-brand/20";
+
+  if (t.includes("예정") || t.includes("완료대기"))
+    return "bg-brand-weak text-brand border border-brand/20";
+
+  if (t.includes("대기") || t.includes("미배정"))
+    return "bg-gray-100 text-gray-500 border border-gray-200";
+
+  if (t.includes("조율"))
+    return "bg-yellow-50 text-yellow-700 border border-yellow-200";
+
+  return "bg-gray-100 text-gray-600 border border-gray-200";
+}
+
+
+/* ───────────────────────────────────────────────
+   3. 자재 DB 업로드 모달
+─────────────────────────────────────────────── */
+function MaterialDbModal({ open, onClose }) {
+  const [dragging, setDragging]     = useState(false);
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const [uploading, setUploading]   = useState(false);
+  const [done, setDone]             = useState(false);
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    const fn = e => e.key === "Escape" && handleClose();
+    if (open) document.addEventListener("keydown", fn);
+    return () => document.removeEventListener("keydown", fn);
+  }, [open]);
+
+  const handleClose = () => {
+    if (uploading) return;
+    setDragging(false); setUploadedFile(null); setUploading(false); setDone(false);
+    onClose();
+  };
+
+  const acceptFile = useCallback((file) => {
+    if (!file) return;
+    const ext = file.name.split(".").pop().toLowerCase();
+    if (!["xlsx", "xls", "csv"].includes(ext)) { alert("xlsx / xls / csv 파일만 업로드 가능해요."); return; }
+    setUploadedFile(file); setDone(false);
+  }, []);
+
+  const handleDragOver  = e => { e.preventDefault(); setDragging(true); };
+  const handleDragLeave = e => { e.preventDefault(); setDragging(false); };
+  const handleDrop = e => { e.preventDefault(); setDragging(false); acceptFile(e.dataTransfer.files[0]); };
+  const handleInputChange = e => { acceptFile(e.target.files[0]); e.target.value = ""; };
+  const handleUpload = () => {
+    if (!uploadedFile) return;
+    setUploading(true);
+    setTimeout(() => { setUploading(false); setDone(true); }, 2000);
+  };
+
+  const sizeLabel = uploadedFile
+    ? uploadedFile.size < 1024 * 1024
+      ? `${(uploadedFile.size / 1024).toFixed(1)} KB`
+      : `${(uploadedFile.size / 1024 / 1024).toFixed(2)} MB`
+    : "";
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={handleClose}>
+      <div className="relative w-full max-w-lg bg-white rounded-2xl shadow overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="bg-gray-900 px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-white/10 rounded-xl flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7M9 11l3 3 3-3M12 14V3" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-white">자재 마스터 DB 업데이트</h2>
+              <p className="text-xs text-gray-400 mt-1">엑셀 파일로 기기/자재 목록을 일괄 갱신해요.</p>
+            </div>
+          </div>
+          <button onClick={handleClose} disabled={uploading}
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-40">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          {done ? (
+            <div className="flex flex-col items-center justify-center py-8 gap-4 text-center">
+              <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center">
+                <svg className="w-8 h-8 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-base font-semibold text-gray-900">업로드 완료</p>
+                <p className="text-sm text-gray-500 mt-1">
+                  <span className="font-medium text-gray-700">{uploadedFile.name}</span> 파일의 자재 데이터가 반영되었어요.
+                </p>
+              </div>
+              <div className="flex gap-6 text-xs text-gray-400 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 w-full justify-center">
+                <span>📦 자재 항목 갱신 완료</span>
+                <span>🕐 {new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} 반영</span>
+              </div>
+              <button onClick={handleClose} className="w-full h-10 rounded-lg text-sm font-medium bg-gray-900 hover:bg-gray-800 text-white transition-colors">확인</button>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-start gap-2 bg-brand-weak border border-brand/20 rounded-lg px-4 py-3">
+                <svg className="w-4 h-4 text-brand mt-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-xs text-brand leading-relaxed">
+                  사전 배포된 <span className="font-semibold">자재 마스터 템플릿(.xlsx)</span> 양식에 맞춰 작성된 파일을 업로드하세요.
+                  기존 DB는 이 파일로 <span className="font-semibold">전체 덮어쓰기</span>됩니다.
+                </p>
+              </div>
+              <div
+                onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+                onClick={() => !uploadedFile && fileInputRef.current?.click()}
+                className={`relative flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed transition-all duration-200
+                  ${uploadedFile ? "border-emerald-400 bg-emerald-50 cursor-default py-5"
+                    : dragging ? "border-brand bg-brand-weak scale-[1.01] py-10 cursor-copy"
+                    : "border-gray-200 bg-gray-50 hover:border-brand hover:bg-brand-weak py-10 cursor-pointer"}`}>
+                <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleInputChange} />
+                {uploadedFile ? (
+                  <div className="flex items-center gap-4 w-full px-6">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                      <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{uploadedFile.name}</p>
+                      <p className="text-xs text-gray-400 mt-1">{sizeLabel}</p>
+                    </div>
+                    <button onClick={e => { e.stopPropagation(); setUploadedFile(null); setDone(false); }}
+                      className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-colors ${dragging ? "bg-brand-weak" : "bg-white border border-gray-200 shadow-sm"}`}>
+                      <svg className={`w-6 h-6 transition-colors ${dragging ? "text-brand" : "text-gray-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                    </div>
+                    <div className="text-center">
+                      <p className={`text-sm font-medium transition-colors ${dragging ? "text-brand" : "text-gray-600"}`}>
+                        {dragging ? "여기에 파일을 놓으세요!" : "엑셀 파일을 여기로 끌어오거나"}
+                      </p>
+                      {!dragging && <p className="text-xs text-gray-400 mt-1"><span className="text-brand font-medium underline underline-offset-2">파일 선택</span>을 눌러 업로드해요</p>}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-gray-400">
+                      {[".xlsx", ".xls", ".csv"].map(ext => (
+                        <span key={ext} className="bg-white border border-gray-200 px-2 py-1 rounded-full font-mono">{ext}</span>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+                <svg className="w-4 h-4 text-amber-500 mt-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+                <span>업로드 즉시 모든 현장의 기기 선택 목록이 갱신돼요. 잘못된 파일 업로드 시 롤백이 필요할 수 있어요.</span>
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button onClick={handleClose} className="flex-1 h-10 rounded-lg text-sm font-medium border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors">취소</button>
+                <button onClick={handleUpload} disabled={!uploadedFile || uploading}
+                  className="flex-1 h-10 rounded-lg text-sm font-semibold bg-brand hover:bg-[#0090e6] disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-white transition-colors flex items-center justify-center gap-2">
+                  {uploading ? (
+                    <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>업로드 중…</>
+                  ) : (
+                    <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>DB 업데이트 적용</>
+                  )}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ───────────────────────────────────────────────
+   4. 서브 컴포넌트
+─────────────────────────────────────────────── */
+function StatusBadge({ text, defaultText }) {
+  const display = text || defaultText || "";
+  if (!display) return <span className="text-gray-300">-</span>;
+  return (
+    <span className={`inline-block px-2 py-1 rounded-full text-xs whitespace-nowrap ${getBadgeStyle(display)}`}>
+      {display}
+    </span>
+  );
+}
+
+function DateCell({ dateStr }) {
+  if (!dateStr) return <span className="text-gray-300">-</span>;
+  const diff = daysDiff(dateStr);
+  const urgent = diff !== null && diff <= 2;
+  let dLabel = null;
+  if (diff !== null) {
+    if (diff === 0)       dLabel = "(오늘)";
+    else if (diff < 0)   dLabel = `(D${diff})`;
+    else                 dLabel = `(D-${diff})`;
+  }
+  return (
+    <div className="flex flex-col items-center leading-snug">
+      <span className={urgent ? "text-red-600 font-semibold whitespace-nowrap" : "text-gray-700 whitespace-nowrap"}>
+        {dateStr}
+      </span>
+      {dLabel && (
+        <span className={`text-xs mt-0.5 whitespace-nowrap ${urgent ? "text-red-500 font-semibold" : "text-gray-400"}`}>
+          {dLabel}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/* ───────────────────────────────────────────────
+   5. 테이블 (체크박스 포함)
+─────────────────────────────────────────────── */
+function OrderTable({ data, selectedIds, onToggleSelect, onToggleAll }) {
+  const [hoveredRow, setHoveredRow] = useState(null);
+
+  const allSelected  = data.length > 0 && selectedIds.length === data.length;
+  const someSelected = selectedIds.length > 0 && selectedIds.length < data.length;
+
+  const headerCbRef = useRef(null);
+  useEffect(() => {
+    if (headerCbRef.current) headerCbRef.current.indeterminate = someSelected;
+  }, [someSelected]);
+
+  const colGroups = [
+    { label: "",         span: 1, cls: "bg-gray-900 border-r border-gray-700" },
+    { label: "기본 정보", span: 5, cls: "bg-gray-800" },
+    { label: "일정",      span: 4, cls: "bg-brand" },
+    { label: "진행 상태", span: 4, cls: "bg-gray-700" },
+  ];
+
+  const cols = [
+    { label: "",           w: "w-10"  },
+    { label: "담당자",  w: "w-20"  },
+    { label: "상담 ID", w: "w-36"  },
+    { label: "고객명",  w: "w-14"  },
+    { label: "전화번호",    w: "w-32"  },
+    { label: "현장 주소",   w: "w-56"  },
+    { label: "실측 일정",   w: "w-32"  },
+    { label: "목대 일정",   w: "w-32"  },
+    { label: "기기 일정",   w: "w-32"  },
+    { label: "상판 일정",   w: "w-32"  },
+    { label: "실측 단계",   w: "w-24"  },
+    { label: "목대 발주",   w: "w-36"  },
+    { label: "기기 발주",   w: "w-32"  },
+    { label: "상판 발주",   w: "w-36"  },
+  ];
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-sm" style={{ minWidth: "1440px" }}>
+        <thead className="sticky top-0 z-10">
+          {/* 컬럼 그룹 행 */}
+          <tr>
+            {colGroups.map((g, i) => (
+              <th key={i} colSpan={g.span}
+                className={`${g.cls} text-white text-center py-2 text-xs font-medium tracking-wider ${i < colGroups.length - 1 ? "border-r border-white/10" : ""}`}>
+                {g.label}
+              </th>
+            ))}
+          </tr>
+          {/* 컬럼 헤더 행 */}
+          <tr className="bg-gray-900 text-gray-300 text-xs">
+            {cols.map((col, i) => (
+              <th key={i}
+                className={`${col.w} py-2 px-3 text-center font-medium whitespace-pre-line ${i < cols.length - 1 ? "border-r border-gray-700" : ""}`}>
+                {i === 0 ? (
+                  <div className="flex items-center justify-center">
+                    <input
+                      ref={headerCbRef}
+                      type="checkbox"
+                      className="cb-custom"
+                      checked={allSelected}
+                      onChange={e => onToggleAll(e.target.checked)}
+                      onClick={e => e.stopPropagation()}
+                    />
+                  </div>
+                ) : col.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+
+        <tbody>
+          {data.length === 0 && (
+            <tr>
+              <td colSpan={14} className="py-20 text-center text-gray-400 bg-white">
+                <div className="flex flex-col items-center gap-2">
+                  <svg className="w-10 h-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                  <span className="text-sm">데이터가 없어요.</span>
+                </div>
+              </td>
+            </tr>
+          )}
+          {data.map((row, idx) => {
+            const isSelected = selectedIds.includes(row.id);
+            const isHovered  = hoveredRow === row.id;
+            const base = idx % 2 === 0 ? "bg-white" : "bg-gray-50/70";
+            const rowBg = isSelected ? "bg-brand-weak" : isHovered ? "bg-brand-weak/50" : base;
+
+            return (
+              <tr
+                key={row.id}
+                className={`${rowBg} cursor-pointer border-b border-gray-200 transition-colors duration-75 group`}
+                onMouseEnter={() => setHoveredRow(row.id)}
+                onMouseLeave={() => setHoveredRow(null)}
+                onClick={() => {
+                  sessionStorage.setItem('CURRENT_CASE_ID', row.id);
+                  window.location.href = 'detail.html';
+                }}
+              >
+                {/* 체크박스 */}
+                <td className="px-3 py-3 text-center border-r border-gray-200" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-center">
+                    <input
+                      type="checkbox"
+                      className="cb-custom"
+                      checked={isSelected}
+                      onChange={() => onToggleSelect(row.id)}
+                    />
+                  </div>
+                </td>
+
+                {/* 담당자 */}
+                <td className="px-3 py-2 text-center border-r border-gray-200">
+                  <span className="text-xs text-gray-700 font-medium">{row.manager || "-"}</span>
+                </td>
+
+                {/* 상담ID */}
+                <td className="px-3 py-2 text-center border-r border-gray-200">
+                  <span className="font-mono text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded">{row.id}</span>
+                </td>
+
+                {/* 고객명 */}
+                <td className="px-3 py-2 text-center font-medium text-gray-900 border-r border-gray-200 whitespace-nowrap">
+                  {row.customer}
+                </td>
+
+                {/* 전화번호 */}
+                <td className="px-3 py-2 text-center text-gray-600 border-r border-gray-200 font-mono text-xs">
+                  {row.phone}
+                </td>
+
+                {/* 현장주소 */}
+                <td className="px-3 py-2 text-gray-600 border-r border-gray-200 text-xs leading-relaxed break-words" title={row.address}>
+                  {row.address}
+                </td>
+
+                {/* 일정 4개 */}
+                <td className="px-3 py-2 text-center border-r border-gray-200 border-l-2 border-l-brand/20 text-xs">
+                  <DateCell dateStr={row.schedule.silcheuk} />
+                </td>
+                <td className="px-3 py-2 text-center border-r border-gray-200 text-xs">
+                  <DateCell dateStr={row.schedule.mokdae} />
+                </td>
+                <td className="px-3 py-2 text-center border-r border-gray-200 text-xs">
+                  <DateCell dateStr={row.schedule.gigi} />
+                </td>
+                <td className="px-3 py-2 text-center border-r border-gray-200 text-xs">
+                  <DateCell dateStr={row.schedule.sangpan} />
+                </td>
+
+                {/* 상태 4개 */}
+                <td className="px-3 py-2 text-center border-r border-gray-200 border-l-2 border-l-gray-300">
+                  <StatusBadge text={row.status.silcheuk} defaultText="실측 요청 대기" />
+                </td>
+                <td className="px-3 py-2 text-center border-r border-gray-200">
+                  <StatusBadge text={row.status.mokdae} defaultText="발주 요청 대기" />
+                </td>
+                <td className="px-3 py-2 text-center border-r border-gray-200">
+                  <StatusBadge text={row.status.gigi} defaultText="발주 요청 대기" />
+                </td>
+                <td className="px-3 py-2 text-center">
+                  <StatusBadge text={row.status.sangpan} defaultText="발주 요청 대기" />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ───────────────────────────────────────────────
+   6. 필터 바
+─────────────────────────────────────────────── */
+function FilterBar({ search, onSearch, managerFilter, onManagerFilter, managers }) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-white border-b border-gray-200">
+      <div className="relative">
+        <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+        </svg>
+        <input
+          type="text" placeholder="고객명 / 상담ID / 주소 검색…"
+          value={search} onChange={e => onSearch(e.target.value)}
+          className="pl-9 pr-4 h-9 text-sm border border-gray-200 rounded-lg w-64 focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent bg-white"
+        />
+      </div>
+      <select
+        value={managerFilter} onChange={e => onManagerFilter(e.target.value)}
+        className="text-sm border border-gray-200 rounded-lg px-3 h-9 focus:outline-none focus:ring-2 focus:ring-brand bg-white text-gray-700">
+        <option value="">전체 담당자</option>
+        {managers.map(m => <option key={m} value={m}>{m}</option>)}
+      </select>
+      <div className="ml-auto flex items-center gap-4 text-xs text-gray-500">
+        <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-red-500"></span>일정 임박/초과 (D-2 이내)</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 bg-red-100 border border-red-300 rounded-full"></span>반려/긴급</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 bg-emerald-100 border border-emerald-300 rounded-full"></span>확정/완료</span>
+      </div>
+    </div>
+  );
+}
+
+/* ───────────────────────────────────────────────
+   6-b. 현장 삭제 확인 모달
+─────────────────────────────────────────────── */
+function DeleteConfirmModal({ open, count, onConfirm, onCancel }) {
+  useEffect(() => {
+    const fn = e => e.key === "Escape" && onCancel();
+    if (open) document.addEventListener("keydown", fn);
+    return () => document.removeEventListener("keydown", fn);
+  }, [open, onCancel]);
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-[fadeIn_0.18s_ease-out]">
+        {/* 아이콘 */}
+        <div className="flex items-center justify-center w-12 h-12 bg-red-100 rounded-2xl mx-auto mb-4">
+          <svg className="w-6 h-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </div>
+        <h3 className="text-base font-bold text-gray-900 text-center mb-1">현장 삭제</h3>
+        <p className="text-sm text-gray-500 text-center mb-1">
+          선택한 <span className="font-semibold text-gray-800">{count}건</span>의 현장을 삭제하시겠어요?
+        </p>
+        <p className="text-xs text-gray-400 text-center mb-6 leading-relaxed">
+          삭제된 현장은 index에서 숨겨지지만,<br/>
+          공급업체·기사 화면에서 <span className="font-medium text-red-500">취소된 요청</span>으로 표시됩니다.
+        </p>
+        <div className="flex gap-3">
+          <button
+            onClick={onCancel}
+            className="flex-1 h-10 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            취소
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-1 h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors shadow-sm"
+          >
+            삭제
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ───────────────────────────────────────────────
+   7. App (최상위)
+─────────────────────────────────────────────── */
+function App() {
+  const [items, setItems]             = useState(() => loadData() ?? []);
+  const [tab, setTab]                 = useState("active");     // "active" | "archived" | "cancelled"
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [search, setSearch]           = useState("");
+  const [managerFilter, setManagerFilter] = useState("");
+  const [dbModalOpen, setDbModalOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+
+  /* localStorage 동기화 */
+  useEffect(() => { saveData(items); }, [items]);
+
+  /* 탭 전환 시 선택 초기화 */
+  const handleTabChange = t => { setTab(t); setSelectedIds([]); setSearch(""); setManagerFilter(""); };
+
+  /* 필터된 현재 탭 데이터 */
+  const tabData = useMemo(() => {
+    if (tab === "cancelled") return items.filter(r => r.cancelled === true);
+    return items.filter(r => !r.cancelled && r.archived === (tab === "archived"));
+  }, [items, tab]);
+  const managers = useMemo(() => [...new Set(tabData.map(d => d.manager))].sort(), [tabData]);
+  const filtered = useMemo(() => {
+    return tabData.filter(row => {
+      const q = search.toLowerCase();
+      const matchSearch = !q || row.customer.toLowerCase().includes(q) || row.id.toLowerCase().includes(q) || row.address.toLowerCase().includes(q);
+      const matchManager = !managerFilter || row.manager === managerFilter;
+      return matchSearch && matchManager;
+    });
+  }, [tabData, search, managerFilter]);
+
+  /* 체크박스 */
+  const handleToggleSelect = id => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+  const handleToggleAll = checked => {
+    setSelectedIds(checked ? filtered.map(r => r.id) : []);
+  };
+
+  /* 현장 이동 액션 (아카이브 ↔ 진행중) */
+  const handleMove = () => {
+    if (selectedIds.length === 0) return;
+    const toArchive = tab === "active";
+    setItems(prev => prev.map(r =>
+      selectedIds.includes(r.id) ? { ...r, archived: toArchive } : r
+    ));
+    setSelectedIds([]);
+  };
+
+  /* 현장 삭제 액션 → cancelled: true */
+  const handleDelete = () => {
+    if (selectedIds.length === 0) return;
+    setItems(prev => prev.map(r =>
+      selectedIds.includes(r.id) ? { ...r, cancelled: true } : r
+    ));
+    setSelectedIds([]);
+    setDeleteConfirmOpen(false);
+  };
+
+  /* 취소된 현장 복원 → 진행중으로 */
+  const handleRestore = () => {
+    if (selectedIds.length === 0) return;
+    setItems(prev => prev.map(r =>
+      selectedIds.includes(r.id) ? { ...r, cancelled: false, archived: false } : r
+    ));
+    setSelectedIds([]);
+  };
+
+  /* 임박 일정 카운트 (헤더용) — 취소된 현장 제외 */
+  const urgentCount = useMemo(
+    () => items.filter(r => !r.archived && !r.cancelled).flatMap(r => Object.values(r.schedule)).filter(isUrgentDate).length,
+    [items]
+  );
+
+  const activeCount    = items.filter(r => !r.archived && !r.cancelled).length;
+  const archivedCount  = items.filter(r => r.archived  && !r.cancelled).length;
+  const cancelledCount = items.filter(r => r.cancelled === true).length;
+
+  return (
+    <div className="min-h-screen bg-[#F9FAFB] flex flex-col">
+
+      {/* ── 헤더 ── */}
+      <header className="bg-gray-900 text-white px-6 h-14 flex items-center justify-between border-b border-gray-800 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-brand rounded-lg flex items-center justify-center">
+            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+          </div>
+          <div>
+            <h1 className="text-sm font-semibold tracking-tight">직시공 발주 관리 시스템</h1>
+            <p className="text-gray-400 text-xs">Interior Direct Construction Order Management</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 text-sm">
+          {urgentCount > 0 && (
+            <div className="flex items-center gap-1 bg-red-500/20 border border-red-500/30 text-red-400 px-3 h-7 rounded-full text-xs font-medium">
+              <span className="w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse"></span>
+              임박 일정 {urgentCount}건
+            </div>
+          )}
+          <div className="text-gray-400 text-xs hidden sm:block">
+            오늘 <span className="text-white font-medium">{TODAY_STR}</span>
+          </div>
+          <div className="w-px h-4 bg-gray-700"></div>
+          <button onClick={() => setDbModalOpen(true)}
+            className="flex items-center gap-2 px-3 h-8 rounded-lg text-xs font-medium border border-gray-700 text-gray-300 hover:text-white hover:border-gray-500 transition-colors">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7M9 11l3 3 3-3M12 14V3" />
+            </svg>
+            자재 DB 업로드
+          </button>
+        </div>
+      </header>
+
+      <MaterialDbModal open={dbModalOpen} onClose={() => setDbModalOpen(false)} />
+      <DeleteConfirmModal
+        open={deleteConfirmOpen}
+        count={selectedIds.length}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteConfirmOpen(false)}
+      />
+
+      {/* ── 메인 컨텐츠 ── */}
+      <div className="flex-1 flex flex-col px-6 py-5 gap-4">
+
+        {/* ── 탭 + 현장 추가 버튼 ── */}
+        <div className="flex items-center justify-between">
+          {/* 탭 */}
+          <div className="flex items-center bg-white border border-gray-200 rounded-xl p-1 gap-1 shadow-sm">
+            <button
+              onClick={() => handleTabChange("active")}
+              className={`flex items-center gap-2 px-4 h-9 rounded-lg text-sm font-semibold transition-all ${
+                tab === "active"
+                  ? "bg-gray-900 text-white shadow-sm"
+                  : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+              }`}
+            >
+              진행 중
+              <span className={`text-xs px-2 py-0.5 rounded-full font-bold transition-colors ${
+                tab === "active" ? "bg-brand text-white" : "bg-gray-100 text-gray-500"
+              }`}>
+                {activeCount}
+              </span>
+            </button>
+            <button
+              onClick={() => handleTabChange("archived")}
+              className={`flex items-center gap-2 px-4 h-9 rounded-lg text-sm font-semibold transition-all ${
+                tab === "archived"
+                  ? "bg-gray-900 text-white shadow-sm"
+                  : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+              }`}
+            >
+              아카이빙(완료)
+              <span className={`text-xs px-2 py-0.5 rounded-full font-bold transition-colors ${
+                tab === "archived" ? "bg-gray-600 text-white" : "bg-gray-100 text-gray-500"
+              }`}>
+                {archivedCount}
+              </span>
+            </button>
+            <button
+              onClick={() => handleTabChange("cancelled")}
+              className={`flex items-center gap-2 px-4 h-9 rounded-lg text-sm font-semibold transition-all ${
+                tab === "cancelled"
+                  ? "bg-red-600 text-white shadow-sm"
+                  : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+              }`}
+            >
+              취소됨
+              {cancelledCount > 0 && (
+                <span className={`text-xs px-2 py-0.5 rounded-full font-bold transition-colors ${
+                  tab === "cancelled" ? "bg-red-800 text-white" : "bg-red-50 text-red-500 border border-red-200"
+                }`}>
+                  {cancelledCount}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* 현장 추가 버튼 */}
+          <button
+            onClick={() => {
+              sessionStorage.removeItem('CURRENT_CASE_ID');
+              window.location.href = 'detail.html?new=1';
+            }}
+            className="flex items-center gap-2 px-5 h-10 rounded-xl text-sm font-semibold bg-brand hover:bg-[#0090e6] text-white shadow-sm transition-all active:scale-[0.97]"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+            </svg>
+            현장 추가하기
+          </button>
+        </div>
+
+        {/* ── 테이블 컨테이너 ── */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+
+          {/* 테이블 헤더 바 */}
+          <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="font-semibold text-gray-900 text-sm">
+                  {tab === "active" ? "진행 중 현장 목록" : tab === "archived" ? "아카이빙(완료) 현장 목록" : "취소된 현장 목록"}
+                </h2>
+                {tab === "archived" && (
+                  <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-medium">완료 처리된 현장</span>
+                )}
+                {tab === "cancelled" && (
+                  <span className="text-xs bg-red-50 text-red-500 border border-red-200 px-2 py-0.5 rounded-full font-medium">취소 처리된 현장</span>
+                )}
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                총 <span className="font-medium text-gray-700">{filtered.length}</span>건
+                {filtered.length !== tabData.length && ` (전체 ${tabData.length}건 중 필터)`}
+                &nbsp;·&nbsp;행 클릭 시 상세 페이지로 이동해요
+              </p>
+            </div>
+            <button className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 border border-gray-200 rounded-lg px-3 h-8 transition-colors hover:bg-gray-50 flex-shrink-0">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              엑셀 내보내기
+            </button>
+          </div>
+
+          {/* ── 액션 바 (체크 선택 시 등장) ── */}
+          {selectedIds.length > 0 && (
+            <div className="flex items-center gap-3 px-4 py-2 bg-brand-weak border-b border-brand/20">
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 bg-brand rounded flex items-center justify-center flex-shrink-0">
+                  <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <span className="text-sm font-semibold text-brand">
+                  {selectedIds.length}건 선택됨
+                </span>
+              </div>
+              <div className="w-px h-4 bg-brand/20"></div>
+
+              {/* 취소됨 탭: 복원만 */}
+              {tab === "cancelled" ? (
+                <button
+                  onClick={handleRestore}
+                  className="flex items-center gap-2 px-4 h-8 rounded-lg text-xs font-semibold bg-brand hover:bg-[#0090e6] text-white shadow-sm transition-all active:scale-[0.97]"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                  </svg>
+                  진행 중으로 복원
+                </button>
+              ) : (
+                <>
+                  {/* 진행중 ↔ 아카이빙 이동 */}
+                  <button
+                    onClick={handleMove}
+                    className={`flex items-center gap-2 px-4 h-8 rounded-lg text-xs font-semibold transition-all active:scale-[0.97] ${
+                      tab === "active"
+                        ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                        : "bg-brand hover:bg-[#0090e6] text-white shadow-sm"
+                    }`}
+                  >
+                    {tab === "active" ? (
+                      <>
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        완료된 현장으로 이동
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                        </svg>
+                        진행 중으로 이동
+                      </>
+                    )}
+                  </button>
+                  {/* 현장 삭제 버튼 */}
+                  <button
+                    onClick={() => setDeleteConfirmOpen(true)}
+                    className="flex items-center gap-2 px-4 h-8 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white shadow-sm transition-all active:scale-[0.97]"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    현장 삭제
+                  </button>
+                </>
+              )}
+
+              <button
+                onClick={() => setSelectedIds([])}
+                className="ml-auto text-xs text-gray-500 hover:text-gray-800 transition-colors flex items-center gap-1"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                선택 해제
+              </button>
+            </div>
+          )}
+
+          {/* 필터 바 */}
+          <FilterBar
+            search={search} onSearch={setSearch}
+            managerFilter={managerFilter} onManagerFilter={setManagerFilter}
+            managers={managers}
+          />
+
+          {/* 테이블 */}
+          <OrderTable
+            data={filtered}
+            selectedIds={selectedIds}
+            onToggleSelect={handleToggleSelect}
+            onToggleAll={handleToggleAll}
+          />
+
+          {/* 하단 푸터 */}
+          <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 flex items-center justify-between text-xs text-gray-400">
+            <span>마지막 업데이트: {TODAY_STR}</span>
+            <span>행 클릭 시 상세 페이지로 이동 · 상태 뱃지는 읽기 전용</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
