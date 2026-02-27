@@ -1,54 +1,35 @@
 
+# 목대/상판 일정 반영 로직 수정
 
-## Detail 탭 기본 앵커 및 느낌표 로직 개선
+## 문제
+목대(상판)에서 발주서 버전이 여러 개일 때, 이전 버전의 공장 확인 여부와 관계없이 최신 버전이 공장 확인(factoryChecked)되면 해당 버전의 일정이 기본 정보에 반영되어야 합니다. 현재는 cross-tab 동기화(localStorage) 의존으로 인해 factory.html에서 확인한 결과가 detail.html에 제때 반영되지 않는 문제가 있습니다.
 
-### 현재 문제
+## 수정 내용
 
-1. **탭 기본값**: `useState("목대")`로 하드코딩되어 있어 항상 목대 탭이 먼저 열림
-2. **느낌표(!)**: `TAB_ALERT` 객체가 실측/목대/상판에 정적으로 `!`를 표시 -- 실제 상태와 무관한 더미 로직
+### 1. detail.html - MokdaeSectionA 일정 전달 로직 (약 1597-1606행)
 
----
+현재 로직:
+```javascript
+const approved = versions
+  .filter(v => !v.isNew && v.factoryChecked)
+  .sort((a, b) => b.versionNo - a.versionNo);
+const date = (approved.length > 0 && approved[0].mokdaeDate) || "";
+```
 
-### 1. 탭 앵커 자동 결정 로직 (추천)
+수정 방향:
+- 최신 제출된 버전(isNew가 false인 것 중 versionNo가 가장 큰 것)이 factoryChecked이면, 해당 버전의 mokdaeDate를 사용
+- 이전 버전들의 factoryChecked 여부는 무시
+- `initVersions` 변경 시에도 확실히 재계산되도록 의존성 배열에 `initVersions` 추가
 
-케이스의 진행 단계에 따라 "지금 가장 주목해야 할 탭"을 자동 선택합니다.
+### 2. detail.html - SangpanSectionA 일정 전달 로직 (약 3541-3550행)
 
-**우선순위 규칙** (위에서 아래로 체크, 첫 번째 해당 탭을 기본값으로):
+목대와 동일한 패턴으로 수정:
+- 최신 제출 버전의 factoryChecked + sangpanDate 기준으로 일정 전달
+- 이전 버전 확인 여부와 무관하게 동작
 
-| 순서 | 조건 | 기본 탭 |
-|------|------|---------|
-| 4 | `dispatched_sangpan === true` (상판 발주 시작됨) | 상판 |
-| 3 | `dispatched_gigi === true` (기기 발주 시작됨) | 기기 |
-| 2 | `dispatched_mokdae === true` (목대 발주 시작됨) | 목대 |
-| 1 | 그 외 (최초 생성, 아직 아무것도 발송 안 됨) | 실측 |
+### 3. cross-tab 동기화 강화
 
-`caseData`가 로드된 후 `dispatched_*` 플래그를 확인하여 `activeTab`을 설정합니다. 이미 DB에 있는 필드를 활용하므로 추가 DB 변경 없음.
+현재 `initVersions`가 변경되면 내부 `versions` 상태를 갱신하지만, `onMokdaeSchedule`/`onSangpanSchedule` useEffect의 의존성이 내부 `versions`만 참조하여 타이밍 이슈 발생 가능. `initVersions` 변경 시에도 스케줄 재계산이 트리거되도록 보장.
 
----
-
-### 2. 느낌표(!) 알림 로직 (추천)
-
-정적 `TAB_ALERT` 객체를 제거하고, **실시간 상태 기반**으로 "주의가 필요한 탭"에만 느낌표를 표시합니다.
-
-**느낌표 표시 조건:**
-
-| 탭 | 느낌표 조건 |
-|----|------------|
-| 실측 | 실측 일정이 아직 확정되지 않았을 때 (`silcheuk_finalized === false`) |
-| 목대 | 반려/수정요청/클레임이 있을 때, 또는 소비자 승인 대기 중일 때 |
-| 기기 | 기기 발주 요청 후 업체 응답 대기 중일 때 |
-| 상판 | 반려/수정요청/클레임이 있을 때, 또는 소비자 승인 대기 중일 때 |
-
----
-
-### 기술 구현 (detail.html 수정)
-
-1. **`getDefaultTab(caseData)` 함수 추가**: dispatched 플래그 기반으로 기본 탭 결정
-2. **`getTabAlerts(caseData, caseStatus)` 함수 추가**: 상태 기반으로 느낌표 표시 여부 계산, 객체 반환
-3. **RightPanel 수정**:
-   - `useState("목대")` 를 `useState("실측")`으로 변경 (초기값)
-   - `useEffect`에서 caseData 로드 후 `getDefaultTab()` 호출하여 `setActiveTab`
-   - `TAB_ALERT` 정적 객체 대신 `getTabAlerts()` 결과 사용
-
-추가 DB 변경 없이, 기존 `cases` 테이블의 `dispatched_*`, `silcheuk_finalized`, `status` 등 기존 필드만 활용합니다.
-
+## 수정 파일
+- `detail.html` (MokdaeSectionA, SangpanSectionA 두 곳)
