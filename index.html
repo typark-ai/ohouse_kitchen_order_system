@@ -581,12 +581,12 @@ function OrderTable({ data, selectedIds, onToggleSelect, onToggleAll }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-sm" style={{ minWidth: "1440px" }}>
-        <thead className="sticky top-0 z-10">
+        <thead className="sticky top-0 z-10 bg-white border-b border-gray-200">
           {/* 컬럼 그룹 행 */}
-          <tr>
+          <tr className="border-b border-gray-200">
             {colGroups.map((g, i) => (
               <th key={i} colSpan={g.span}
-                className={`${g.cls} text-gray-500 text-center py-2 body-xs font-semibold tracking-wider uppercase ${i < colGroups.length - 1 ? "border-r border-gray-200" : ""}`}>
+                className={`${g.cls} text-gray-600 text-center py-2 body-sm font-semibold tracking-normal ${i < colGroups.length - 1 ? "border-r border-gray-200" : ""}`}>
                 {g.label}
               </th>
             ))}
