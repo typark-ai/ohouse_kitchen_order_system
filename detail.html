@@ -5110,11 +5110,39 @@ const TAB_ICONS = {
   ),
 };
 
-const TAB_ALERT = {
-  실측: { icon: "!", cls: "bg-brand-weak text-brand" },
-  목대: { icon: "!", cls: "bg-orange-100 text-orange-600" },
-  상판: { icon: "!", cls: "bg-purple-100 text-purple-600" },
-};
+/* ── 탭 기본 앵커 자동 결정 ── */
+function getDefaultTab(caseData) {
+  if (!caseData) return "실측";
+  if (caseData.dispatchedSangpan) return "상판";
+  if (caseData.dispatchedGigi) return "기기";
+  if (caseData.dispatchedMokdae) return "목대";
+  return "실측";
+}
+
+/* ── 탭 느낌표 알림 (상태 기반) ── */
+function getTabAlerts(caseData) {
+  if (!caseData) return {};
+  const alerts = {};
+  // 실측: 일정 미확정
+  if (!caseData.silcheukFinalized) {
+    alerts["실측"] = { icon: "!", cls: "bg-brand-weak text-brand" };
+  }
+  // 목대: 클레임 있거나 소비자 승인 대기 (발주됨 + 미승인)
+  const mokdaeClaims = Array.isArray(caseData.mokdaeClaims) ? caseData.mokdaeClaims : [];
+  if (mokdaeClaims.length > 0 || (caseData.dispatchedMokdae && !caseData.mokdaeConsumerApproved)) {
+    alerts["목대"] = { icon: "!", cls: "bg-orange-100 text-orange-600" };
+  }
+  // 기기: 발주 요청 후 업체 응답 대기
+  if (caseData.dispatchedGigi && !caseData.gigiFinalDate) {
+    alerts["기기"] = { icon: "!", cls: "bg-blue-100 text-blue-600" };
+  }
+  // 상판: 클레임 있거나 소비자 승인 대기
+  const sangpanClaims = Array.isArray(caseData.sangpanClaims) ? caseData.sangpanClaims : [];
+  if (sangpanClaims.length > 0 || (caseData.dispatchedSangpan && !caseData.sangpanConsumerApproved)) {
+    alerts["상판"] = { icon: "!", cls: "bg-purple-100 text-purple-600" };
+  }
+  return alerts;
+}
 
 const TAB_STATUS_KEYS = { 실측: "silcheuk", 목대: "mokdae", 기기: "gigi", 상판: "sangpan" };
 
@@ -5127,8 +5155,18 @@ function getTabStatusStyle(text) {
   return "text-gray-400";
 }
 
-function RightPanel({ onToast, onScheduleUnlock, caseStatus, onStatusChange, silcheukData, onProposalsSend, onFinalConfirm, onResultConfirm, onMokdaeSchedule, mokdaeData, onMokdaeVersionsChange, onCadChange, onSectionCChange, onClaimsChange, mokdaeProductionStarted, onGigiSchedule, onGigiOrderSubmit, gigiOrderData, onSangpanSchedule, sangpanData, onSangpanVersionsChange, onDrawingChange, onSangpanSectionCChange, onSangpanClaimsChange, sangpanProductionStarted, onMokdaeUrgentChange, onSangpanUrgentChange }) {
-  const [activeTab, setActiveTab] = useState("목대");
+function RightPanel({ onToast, onScheduleUnlock, caseStatus, onStatusChange, silcheukData, onProposalsSend, onFinalConfirm, onResultConfirm, onMokdaeSchedule, mokdaeData, onMokdaeVersionsChange, onCadChange, onSectionCChange, onClaimsChange, mokdaeProductionStarted, onGigiSchedule, onGigiOrderSubmit, gigiOrderData, onSangpanSchedule, sangpanData, onSangpanVersionsChange, onDrawingChange, onSangpanSectionCChange, onSangpanClaimsChange, sangpanProductionStarted, onMokdaeUrgentChange, onSangpanUrgentChange, caseData }) {
+  const [activeTab, setActiveTab] = useState("실측");
+  const tabInitRef = useRef(false);
+
+  useEffect(() => {
+    if (caseData && !tabInitRef.current) {
+      tabInitRef.current = true;
+      setActiveTab(getDefaultTab(caseData));
+    }
+  }, [caseData]);
+
+  const tabAlerts = getTabAlerts(caseData);
 
   return (
     <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
@@ -5145,9 +5183,9 @@ function RightPanel({ onToast, onScheduleUnlock, caseStatus, onStatusChange, sil
               <div className="flex items-center gap-1.5">
                 {TAB_ICONS[tab]}
                 <span>{tab}</span>
-                {TAB_ALERT[tab] && (
-                  <span className={`flex items-center justify-center w-4 h-4 rounded-full text-xs font-bold ${TAB_ALERT[tab].cls}`}>
-                    {TAB_ALERT[tab].icon}
+                {tabAlerts[tab] && (
+                  <span className={`flex items-center justify-center w-4 h-4 rounded-full text-xs font-bold ${tabAlerts[tab].cls}`}>
+                    {tabAlerts[tab].icon}
                   </span>
                 )}
               </div>
@@ -5782,6 +5820,7 @@ function App() {
           sangpanProductionStarted={caseData.sangpanProductionStarted || false}
           onMokdaeUrgentChange={handleMokdaeUrgentChange}
           onSangpanUrgentChange={handleSangpanUrgentChange}
+          caseData={caseData}
         />
       </div>
 
