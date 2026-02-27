@@ -1,35 +1,31 @@
 
-# 목대/상판 일정 반영 로직 수정
 
-## 문제
-목대(상판)에서 발주서 버전이 여러 개일 때, 이전 버전의 공장 확인 여부와 관계없이 최신 버전이 공장 확인(factoryChecked)되면 해당 버전의 일정이 기본 정보에 반영되어야 합니다. 현재는 cross-tab 동기화(localStorage) 의존으로 인해 factory.html에서 확인한 결과가 detail.html에 제때 반영되지 않는 문제가 있습니다.
+# 재마감 기능 비활성화 (Coming Soon 처리)
 
-## 수정 내용
+## 개요
+재마감 관련 기능만 정확히 4곳에서 비활성화합니다. 다른 코드는 일절 수정하지 않습니다.
 
-### 1. detail.html - MokdaeSectionA 일정 전달 로직 (약 1597-1606행)
+## 수정 범위 (detail.html만 수정)
 
-현재 로직:
-```javascript
-const approved = versions
-  .filter(v => !v.isNew && v.factoryChecked)
-  .sort((a, b) => b.versionNo - a.versionNo);
-const date = (approved.length > 0 && approved[0].mokdaeDate) || "";
-```
+### 1. MokdaeSectionC - "재마감 요청" 버튼 (2593-2603행)
+- 버튼을 `disabled` 처리, `onClick` 제거
+- 텍스트를 "재마감 요청 (Coming Soon)"으로 변경
+- 스타일을 회색(`text-gray-400 bg-gray-100 border-gray-200 cursor-not-allowed`)으로 변경
 
-수정 방향:
-- 최신 제출된 버전(isNew가 false인 것 중 versionNo가 가장 큰 것)이 factoryChecked이면, 해당 버전의 mokdaeDate를 사용
-- 이전 버전들의 factoryChecked 여부는 무시
-- `initVersions` 변경 시에도 확실히 재계산되도록 의존성 배열에 `initVersions` 추가
+### 2. MokdaeSectionD - 재마감 요청 아코디언 (2657행~)
+- 섹션 헤더 제목 옆에 "Coming Soon" 뱃지 추가
+- 신규 요청 작성 폼 영역의 input, textarea, button을 `disabled` 처리
+- 기존 전송 내역(claims)은 읽기 전용으로 그대로 유지
 
-### 2. detail.html - SangpanSectionA 일정 전달 로직 (약 3541-3550행)
+### 3. SangpanSectionC - "재마감 요청" 버튼 (4801-4811행)
+- MokdaeSectionC와 동일한 패턴 적용
 
-목대와 동일한 패턴으로 수정:
-- 최신 제출 버전의 factoryChecked + sangpanDate 기준으로 일정 전달
-- 이전 버전 확인 여부와 무관하게 동작
+### 4. SangpanSectionD - 재마감 요청 아코디언 (4823행~)
+- MokdaeSectionD와 동일한 패턴 적용
 
-### 3. cross-tab 동기화 강화
+## 수정하지 않는 부분
+- 상태 옵션 배열(MOKDAE_STATUS_OPTS 등)의 "재마감확정" 등 기존 값
+- factory.html / countertop.html의 재마감 관련 표시 로직
+- 긴급 조정 버튼 (재마감과 별개 기능)
+- 그 외 모든 코드
 
-현재 `initVersions`가 변경되면 내부 `versions` 상태를 갱신하지만, `onMokdaeSchedule`/`onSangpanSchedule` useEffect의 의존성이 내부 `versions`만 참조하여 타이밍 이슈 발생 가능. `initVersions` 변경 시에도 스케줄 재계산이 트리거되도록 보장.
-
-## 수정 파일
-- `detail.html` (MokdaeSectionA, SangpanSectionA 두 곳)
