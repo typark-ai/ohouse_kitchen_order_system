@@ -127,6 +127,23 @@
 <body class="bg-[#F9FAFB] min-h-screen">
 <div id="root"></div>
 
+<script>
+  (function () {
+    const path = window.location.pathname.replace(/\/+$/, '');
+    const routeAliasMap = {
+      '/detail': '/detail.html',
+      '/factory': '/factory.html',
+      '/countertop': '/countertop.html',
+      '/supplier': '/supplier.html',
+      '/engineer': '/engineer.html',
+    };
+    const target = routeAliasMap[path];
+    if (target) {
+      window.location.replace(`${target}${window.location.search}${window.location.hash}`);
+    }
+  })();
+</script>
+
 <script type="text/babel">
 const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
