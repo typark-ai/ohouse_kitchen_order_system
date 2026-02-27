@@ -2561,7 +2561,7 @@ function SearchableSelect({ category, options, state, onChange, onToast }) {
           isCustomMode ? "bg-purple-500" : isEmpty ? "bg-gray-300" : "bg-emerald-500"
         }`}></span>
 
-        <span className={`flex-1 truncate ${isEmpty ? "text-gray-400" : isCustomMode ? "text-purple-700 font-medium" : "text-gray-800 font-medium"}`}>
+        <span className={`flex-1 min-w-0 break-words whitespace-normal text-left ${isEmpty ? "text-gray-400" : isCustomMode ? "text-purple-700 font-medium" : "text-gray-800 font-medium"}`}>
           {displayLabel ?? "미발주"}
         </span>
 
@@ -2589,8 +2589,8 @@ function SearchableSelect({ category, options, state, onChange, onToast }) {
 
       {/* ── 드롭다운 패널 ── */}
       {open && (
-        <div className="absolute z-30 mt-1.5 w-full bg-white border border-gray-200 rounded-xl shadow overflow-hidden"
-          style={{ maxHeight: 280 }}>
+        <div className="absolute z-30 mt-1.5 w-full min-w-[320px] bg-white border border-gray-200 rounded-xl shadow overflow-hidden"
+          style={{ maxHeight: 320 }}>
 
           {/* 검색 입력 */}
           <div className="px-3 py-2 border-b border-gray-100 sticky top-0 bg-white">
@@ -2612,7 +2612,7 @@ function SearchableSelect({ category, options, state, onChange, onToast }) {
           </div>
 
           {/* 옵션 목록 */}
-          <div className="overflow-y-auto" style={{ maxHeight: 196 }}>
+          <div className="overflow-y-auto" style={{ maxHeight: 240 }}>
             {/* 미발주 (기본값) */}
             <button
               type="button"
@@ -2650,7 +2650,7 @@ function SearchableSelect({ category, options, state, onChange, onToast }) {
                     }`}
                 >
                   <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${isSelected ? "bg-emerald-500" : "bg-gray-300"}`}></span>
-                  <span className="leading-snug">{opt}</span>
+                  <span className="leading-snug break-words">{opt}</span>
                   {isSelected && (
                     <svg className="w-3.5 h-3.5 text-emerald-600 ml-auto flex-shrink-0 mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
