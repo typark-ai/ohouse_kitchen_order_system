@@ -2896,8 +2896,8 @@ function SearchableSelect({ category, options, state, onChange, onToast }) {
 
       {/* ── 드롭다운 패널 ── */}
       {open && (
-        <div className="absolute z-30 mt-1.5 w-full min-w-[320px] bg-white border border-gray-200 rounded-xl shadow overflow-hidden"
-          style={{ maxHeight: 320 }}>
+        <div className="absolute z-[9999] mt-1.5 w-full min-w-[320px] bg-white border border-gray-200 rounded-xl shadow-lg"
+          style={{ maxHeight: 320, overflowY: 'auto' }}>
 
           {/* 검색 입력 */}
           <div className="px-3 py-2 border-b border-gray-100 sticky top-0 bg-white">
@@ -3258,7 +3258,7 @@ function GigiTab({ onToast, onGigiOrderSubmit, gigiOrderData }) {
 
       {/* ── 카테고리 폼 ── */}
       {!loading && (
-      <div className={`bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm divide-y divide-gray-100 ${isLocked ? "opacity-60 pointer-events-none" : ""}`}>
+      <div className={`bg-white border border-gray-200 rounded-2xl shadow-sm divide-y divide-gray-100 ${isLocked ? "opacity-60 pointer-events-none" : ""}`}>
         {Object.keys(gigiDb).map(catKey => {
           const sel = selections[catKey] || { mode: "select", value: "", custom: "" };
           const isSet = sel.value && (sel.mode === "select" || sel.custom.trim());
