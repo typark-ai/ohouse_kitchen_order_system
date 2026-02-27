@@ -4531,6 +4531,33 @@ function App() {
   const [caseData, setCaseData] = useState(getInitialCase);
   const [isNew, setIsNew] = useState(isNewCaseMode);
 
+  /* ── gigi_store에서 기기 발주 데이터 로드 ── */
+  useEffect(() => {
+    if (!caseId || isNewCaseMode()) return;
+    (async () => {
+      try {
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/gigi_store?case_id=eq.${encodeURIComponent(caseId)}&select=data`,
+          { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
+        );
+        if (!res.ok) return;
+        const rows = await res.json();
+        if (rows.length > 0 && rows[0].data) {
+          setCaseData(prev => {
+            const updated = { ...prev, gigiOrderData: rows[0].data };
+            if (rows[0].data.status) {
+              updated.status = { ...prev.status, gigi: rows[0].data.status };
+            }
+            persistItem(updated);
+            return updated;
+          });
+        }
+      } catch (e) {
+        console.warn("기기 발주 데이터 로드 실패:", e);
+      }
+    })();
+  }, [caseId]);
+
   /* 실측 일정 잠금: 실측 탭 고객 전달 완료 후 최종 일정 자동 입력 */
   /* scheduleEditable 제거: 실측·목대 일정 표시가 *FinalDate 데이터 기반으로 전환됨 */
 
@@ -4745,6 +4772,27 @@ function App() {
         status: { ...prev.status, gigi: orderData.status },
       };
       persistItem(updated);
+
+      /* DB(gigi_store)에도 저장 */
+      const cid = prev.id;
+      (async () => {
+        try {
+          // upsert: case_id가 PK이므로 conflict 시 update
+          await fetch(`${SUPABASE_URL}/rest/v1/gigi_store`, {
+            method: "POST",
+            headers: {
+              "apikey": SUPABASE_KEY,
+              "Authorization": `Bearer ${SUPABASE_KEY}`,
+              "Content-Type": "application/json",
+              "Prefer": "resolution=merge-duplicates",
+            },
+            body: JSON.stringify({ case_id: cid, data: orderData }),
+          });
+        } catch (e) {
+          console.warn("기기 발주 DB 저장 실패:", e);
+        }
+      })();
+
       return updated;
     });
   }, [isNew]);
