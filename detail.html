@@ -5715,24 +5715,36 @@ function App() {
   /* 목대 발주 요청 발송 → dispatched_mokdae = true → localStorage + DB 영속화 */
   const handleMokdaeDispatched = useCallback(() => {
     if (isNew) return;
+    const cid = caseId;
     setCaseData(prev => {
       if (!prev) return prev;
       const updated = { ...prev, dispatchedMokdae: true };
       persistItem(updated);
       return updated;
     });
-  }, [isNew]);
+
+    if (!cid) return;
+    fetch(`${SUPABASE_URL}/rest/v1/cases?id=eq.${encodeURIComponent(cid)}`, {
+      method: "PATCH", headers: SB_HEADERS, body: JSON.stringify({ dispatched_mokdae: true }),
+    }).catch(e => console.warn("dispatched_mokdae patch failed:", e));
+  }, [isNew, caseId]);
 
   /* 상판 발주 요청 발송 → dispatched_sangpan = true → localStorage + DB 영속화 */
   const handleSangpanDispatched = useCallback(() => {
     if (isNew) return;
+    const cid = caseId;
     setCaseData(prev => {
       if (!prev) return prev;
       const updated = { ...prev, dispatchedSangpan: true };
       persistItem(updated);
       return updated;
     });
-  }, [isNew]);
+
+    if (!cid) return;
+    fetch(`${SUPABASE_URL}/rest/v1/cases?id=eq.${encodeURIComponent(cid)}`, {
+      method: "PATCH", headers: SB_HEADERS, body: JSON.stringify({ dispatched_sangpan: true }),
+    }).catch(e => console.warn("dispatched_sangpan patch failed:", e));
+  }, [isNew, caseId]);
   const handleStatusChange = useCallback((tabKey, status) => {
     if (isNew) return; // 신규 현장은 ID 미확정 상태이므로 생략
     setCaseData(prev => {
