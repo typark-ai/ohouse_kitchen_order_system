@@ -154,6 +154,42 @@ const { useState, useEffect, useRef, useCallback, useMemo } = React;
 const LS_CASES = 'JIKSIGONG_DATA';
 const SUPABASE_URL = "https://ykifurzrrbjrgjrznimk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlraWZ1cnpycmJqcmdqcnpuaW1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMjE3NTcsImV4cCI6MjA4NzY5Nzc1N30.BVTlrG_Q_cXqj6qOa_rZPXrCs7MhwuR9o8koncGoUU0";
+const STORAGE_BUCKET = "case-files";
+
+async function uploadFileToStorage(file, caseId, section) {
+  const timestamp = Date.now();
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const storagePath = `${caseId}/${section}/${timestamp}_${safeName}`;
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${STORAGE_BUCKET}/${storagePath}`, {
+    method: "POST",
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": file.type || "application/octet-stream", "x-upsert": "true" },
+    body: file,
+  });
+  if (!res.ok) { console.error("Storage upload failed:", await res.text()); return null; }
+  return { storagePath, publicUrl: `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${storagePath}` };
+}
+
+function resizeImageToBlob(file, maxSize = 900) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxSize || height > maxSize) {
+          if (width >= height) { height = Math.round(height * maxSize / width); width = maxSize; }
+          else { width = Math.round(width * maxSize / height); height = maxSize; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.75);
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 function loadCases() {
   try { const r = localStorage.getItem(LS_CASES); return r ? JSON.parse(r) : []; } catch { return []; }
@@ -788,46 +824,39 @@ function ScheduleSection({ proposals, caseId, onToast, finalized, finalDate, fin
 /* ═══════════════════════════════════════
    업로드 버튼 (큰 네모 카드)
 ═══════════════════════════════════════ */
-function UploadCard({ icon, label, sublabel, color, files, onAdd, onRemove, accept, multiple = true, locked = false }) {
+function UploadCard({ icon, label, sublabel, color, files, onAdd, onRemove, accept, multiple = true, locked = false, caseId = "", section = "silcheuk" }) {
   const inputRef = useRef(null);
+  const [isUploading, setIsUploading] = useState(false);
 
-  /* 이미지: canvas로 최대 900px 리사이즈 후 JPEG 75% 저장 (localStorage 용량 초과 방지)
-     비이미지(PDF/DWG 등): url=null, 메타데이터만 저장 */
   const handleInput = async (e) => {
-    const files = Array.from(e.target.files);
-    const toStorable = (f) => new Promise((resolve) => {
-      if (!f.type.startsWith("image/")) {
-        resolve({ id: Date.now() + Math.random(), name: f.name, url: null, isImage: false, size: f.size });
-        return;
+    const fileList = Array.from(e.target.files);
+    if (!fileList.length) return;
+    setIsUploading(true);
+    try {
+      const results = [];
+      for (const f of fileList) {
+        const isImage = f.type.startsWith("image/");
+        let uploadFile = f;
+        if (isImage) {
+          const resizedBlob = await resizeImageToBlob(f);
+          if (resizedBlob) uploadFile = new File([resizedBlob], f.name, { type: "image/jpeg" });
+        }
+        const uploaded = caseId ? await uploadFileToStorage(uploadFile, caseId, section) : null;
+        results.push({
+          id: Date.now() + Math.random(),
+          name: f.name,
+          url: uploaded ? uploaded.publicUrl : null,
+          storagePath: uploaded ? uploaded.storagePath : null,
+          isImage,
+          size: f.size,
+        });
       }
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const img = new Image();
-        img.onload = () => {
-          const MAX = 900;
-          let { width, height } = img;
-          if (width > MAX || height > MAX) {
-            if (width >= height) { height = Math.round(height * MAX / width); width = MAX; }
-            else                 { width  = Math.round(width  * MAX / height); height = MAX; }
-          }
-          const canvas = document.createElement("canvas");
-          canvas.width = width;
-          canvas.height = height;
-          canvas.getContext("2d").drawImage(img, 0, 0, width, height);
-          resolve({
-            id:      Date.now() + Math.random(),
-            name:    f.name,
-            url:     canvas.toDataURL("image/jpeg", 0.75),
-            isImage: true,
-            size:    f.size,
-          });
-        };
-        img.src = ev.target.result;
-      };
-      reader.readAsDataURL(f);
-    });
-    const newFiles = await Promise.all(files.map(toStorable));
-    onAdd(newFiles);
+      onAdd(results);
+    } catch (err) {
+      console.error("Upload error:", err);
+    } finally {
+      setIsUploading(false);
+    }
     e.target.value = "";
   };
 
@@ -986,6 +1015,8 @@ function UploadSection({ onToast, siteStatus, finalized, caseId }) {
             files={drawings}
             onAdd={f => setDrawings(p => [...p, ...f])}
             onRemove={id => setDrawings(p => p.filter(f => f.id !== id))}
+            caseId={caseId}
+            section="silcheuk-drawings"
           />
 
           <UploadCard
@@ -1009,6 +1040,8 @@ function UploadSection({ onToast, siteStatus, finalized, caseId }) {
             files={photos}
             onAdd={f => setPhotos(p => [...p, ...f])}
             onRemove={id => setPhotos(p => p.filter(f => f.id !== id))}
+            caseId={caseId}
+            section="silcheuk-photos"
           />
         </div>
 
