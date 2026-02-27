@@ -258,9 +258,10 @@ function LeftPanel({ data, onSave, isNew, silcheukFinalDate, mokdaeFinalDate, gi
   });
   const [saved, setSaved] = useState(false);
 
-  /* data prop이 외부에서 바뀌면 form도 동기화 */
+  /* data prop이 외부에서 바뀌면 form도 동기화 (status, schedule 포함) */
   useEffect(() => {
-    setForm({
+    setForm(prev => ({
+      ...prev,
       id:       data.id || "",
       manager:  data.manager || "",
       customer: data.customer || "",
@@ -279,8 +280,8 @@ function LeftPanel({ data, onSave, isNew, silcheukFinalDate, mokdaeFinalDate, gi
         gigi:     (data.status && data.status.gigi)     || "",
         sangpan:  (data.status && data.status.sangpan)  || "",
       },
-    });
-  }, [data.id]);
+    }));
+  }, [data.id, data.status?.mokdae, data.status?.gigi, data.status?.sangpan, data.status?.silcheuk, data.schedule?.mokdae, data.schedule?.gigi, data.schedule?.sangpan, data.schedule?.silcheuk]);
 
   /* 실측 탭 전달 완료 시 silcheukFinalDate가 채워지면 form에 자동 반영 */
   useEffect(() => {
