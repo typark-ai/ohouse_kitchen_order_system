@@ -1556,7 +1556,7 @@ function Modal({ open, onClose, children, maxW = "max-w-lg" }) {
 /* ═══════════════════════════════════════════════════════
    목대 탭 — Section A: 발주 서류 & 버전 히스토리
 ═══════════════════════════════════════════════════════ */
-function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast, onStatusChange, silcheukImages = [], onMokdaeSchedule, uploadedFiles: initUploadedFiles = {}, onVersionsChange, silcheukFinalDate = "", mokdaeProductionStarted = false, mokdaeConfirmedAt = null, onCadReset, onUrgentChange, onSectionCReset }) {
+function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast, onStatusChange, silcheukImages = [], onMokdaeSchedule, uploadedFiles: initUploadedFiles = {}, onVersionsChange, silcheukFinalDate = "", mokdaeProductionStarted = false, mokdaeConfirmedAt = null, onCadReset, onUrgentChange, onSectionCReset, onDispatched }) {
   const [versions, setVersions]     = useState(initVersions);
   const [activeVer, setActiveVer]   = useState(initActive);
   const [uploadedFiles, setUploadedFiles] = useState(initUploadedFiles); // versionNo → [{id,name,size,url,isImage}]
@@ -1713,13 +1713,8 @@ function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast
     /* 발주서 재발송 시 기존 CAD 승인 해제 */
     if (onCadReset) onCadReset();
 
-    /* DB에 dispatched_mokdae = true 기록 (fire-and-forget) */
-    const _cid = getCaseId();
-    if (_cid) {
-      fetch(`${SUPABASE_URL}/rest/v1/cases?id=eq.${encodeURIComponent(_cid)}`, {
-        method: "PATCH", headers: SB_HEADERS, body: JSON.stringify({ dispatched_mokdae: true }),
-      }).catch(e => console.warn("dispatched_mokdae patch failed:", e));
-    }
+    /* 부모 caseData에 dispatched 플래그 반영 → persistItem → syncCaseToDB */
+    if (onDispatched) onDispatched();
 
     /* 발주 확정 후 수정 → 긴급발주 상태 + Section C 리셋 */
     if (mokdaeConfirmedAt) {
@@ -3505,7 +3500,7 @@ function GigiTab({ onToast, onGigiOrderSubmit, gigiOrderData, onStatusChange }) 
 /* ═══════════════════════════════════════════════════════
    상판 탭 — Section A: 발주 서류 업로드 + 버전 관리
 ═══════════════════════════════════════════════════════ */
-function SangpanSectionA({ versions: initVersions, activeVer: initActive, onToast, onStatusChange, silcheukImages = [], silcheukResultDone = false, onSangpanSchedule, uploadedFiles: initUploadedFiles = {}, onVersionsChange, silcheukFinalDate = "", sangpanProductionStarted = false, sangpanConfirmedAt = null, onDrawingReset, onUrgentChange, onSectionCReset, mokdaeData = {}, mokdaeProductionStarted = false, gigiOrderData = null }) {
+function SangpanSectionA({ versions: initVersions, activeVer: initActive, onToast, onStatusChange, silcheukImages = [], silcheukResultDone = false, onSangpanSchedule, uploadedFiles: initUploadedFiles = {}, onVersionsChange, silcheukFinalDate = "", sangpanProductionStarted = false, sangpanConfirmedAt = null, onDrawingReset, onUrgentChange, onSectionCReset, mokdaeData = {}, mokdaeProductionStarted = false, gigiOrderData = null, onDispatched }) {
   const [versions, setVersions]     = useState(initVersions);
   const [activeVer, setActiveVer]   = useState(initActive);
   const [uploadedFiles, setUploadedFiles] = useState(initUploadedFiles); // versionNo → [{id,name,size,url,isImage}]
@@ -3662,13 +3657,8 @@ function SangpanSectionA({ versions: initVersions, activeVer: initActive, onToas
     /* 발주서 재발송 시 기존 도면 승인 해제 */
     if (onDrawingReset) onDrawingReset();
 
-    /* DB에 dispatched_sangpan = true 기록 (fire-and-forget) */
-    const _cid = getCaseId();
-    if (_cid) {
-      fetch(`${SUPABASE_URL}/rest/v1/cases?id=eq.${encodeURIComponent(_cid)}`, {
-        method: "PATCH", headers: SB_HEADERS, body: JSON.stringify({ dispatched_sangpan: true }),
-      }).catch(e => console.warn("dispatched_sangpan patch failed:", e));
-    }
+    /* 부모 caseData에 dispatched 플래그 반영 → persistItem → syncCaseToDB */
+    if (onDispatched) onDispatched();
 
     /* 발주 확정 후 수정 → 긴급발주 상태 + Section C 리셋 */
     if (sangpanConfirmedAt) {
@@ -4977,7 +4967,7 @@ function SangpanSectionD({ claims: initClaims, onToast, onClaimsChange }) {
 /* ═══════════════════════════════════════════════════════
    상판 탭 — 전체 레이아웃
 ═══════════════════════════════════════════════════════ */
-function SangpanTab({ onToast, onStatusChange, silcheukImages, silcheukResultDone = false, onSangpanSchedule, sangpanData = {}, onSangpanVersionsChange, onDrawingChange, silcheukFinalDate = "", onSectionCChange, onClaimsChange, sangpanProductionStarted = false, onUrgentChange, mokdaeData = {}, mokdaeProductionStarted = false, gigiOrderData = null }) {
+function SangpanTab({ onToast, onStatusChange, silcheukImages, silcheukResultDone = false, onSangpanSchedule, sangpanData = {}, onSangpanVersionsChange, onDrawingChange, silcheukFinalDate = "", onSectionCChange, onClaimsChange, sangpanProductionStarted = false, onUrgentChange, mokdaeData = {}, mokdaeProductionStarted = false, gigiOrderData = null, onDispatched }) {
   const sd = sangpanData;
 
   /* 발주서 재발송 시 도면 승인 상태 전부 해제 */
@@ -5016,6 +5006,7 @@ function SangpanTab({ onToast, onStatusChange, silcheukImages, silcheukResultDon
         mokdaeData={mokdaeData}
         mokdaeProductionStarted={mokdaeProductionStarted}
         gigiOrderData={gigiOrderData}
+        onDispatched={onDispatched}
       />
       <SangpanSectionB
         drawingVersions={sd.drawingVersions || []}
@@ -5043,7 +5034,7 @@ function SangpanTab({ onToast, onStatusChange, silcheukImages, silcheukResultDon
 /* ═══════════════════════════════════════════════════════
    목대 탭 — 전체 레이아웃
 ═══════════════════════════════════════════════════════ */
-function MokdaeTab({ onToast, onStatusChange, silcheukImages, onMokdaeSchedule, mokdaeData = {}, onMokdaeVersionsChange, onCadChange, silcheukFinalDate = "", onSectionCChange, onClaimsChange, mokdaeProductionStarted = false, onUrgentChange }) {
+function MokdaeTab({ onToast, onStatusChange, silcheukImages, onMokdaeSchedule, mokdaeData = {}, onMokdaeVersionsChange, onCadChange, silcheukFinalDate = "", onSectionCChange, onClaimsChange, mokdaeProductionStarted = false, onUrgentChange, onDispatched }) {
   const md = mokdaeData;
 
   /* 발주서 재발송 시 CAD 승인 상태 전부 해제 */
@@ -5078,6 +5069,7 @@ function MokdaeTab({ onToast, onStatusChange, silcheukImages, onMokdaeSchedule, 
         onCadReset={handleCadReset}
         onUrgentChange={onUrgentChange}
         onSectionCReset={handleSectionCReset}
+        onDispatched={onDispatched}
       />
       <MokdaeSectionB
         cadVersions={md.cadVersions || []}
@@ -5174,7 +5166,7 @@ function getTabStatusStyle(text) {
   return "text-gray-400";
 }
 
-function RightPanel({ onToast, onScheduleUnlock, caseStatus, onStatusChange, silcheukData, onProposalsSend, onFinalConfirm, onResultConfirm, onMokdaeSchedule, mokdaeData, onMokdaeVersionsChange, onCadChange, onSectionCChange, onClaimsChange, mokdaeProductionStarted, onGigiSchedule, onGigiOrderSubmit, gigiOrderData, onSangpanSchedule, sangpanData, onSangpanVersionsChange, onDrawingChange, onSangpanSectionCChange, onSangpanClaimsChange, sangpanProductionStarted, onMokdaeUrgentChange, onSangpanUrgentChange, caseData }) {
+function RightPanel({ onToast, onScheduleUnlock, caseStatus, onStatusChange, silcheukData, onProposalsSend, onFinalConfirm, onResultConfirm, onMokdaeSchedule, mokdaeData, onMokdaeVersionsChange, onCadChange, onSectionCChange, onClaimsChange, mokdaeProductionStarted, onGigiSchedule, onGigiOrderSubmit, gigiOrderData, onSangpanSchedule, sangpanData, onSangpanVersionsChange, onDrawingChange, onSangpanSectionCChange, onSangpanClaimsChange, sangpanProductionStarted, onMokdaeUrgentChange, onSangpanUrgentChange, caseData, onMokdaeDispatched, onSangpanDispatched }) {
   const [activeTab, setActiveTab] = useState("실측");
   const tabInitRef = useRef(false);
 
@@ -5262,6 +5254,7 @@ function RightPanel({ onToast, onScheduleUnlock, caseStatus, onStatusChange, sil
             onClaimsChange={onClaimsChange}
             mokdaeProductionStarted={mokdaeProductionStarted}
             onUrgentChange={onMokdaeUrgentChange}
+            onDispatched={onMokdaeDispatched}
           />
         </div>
         <div style={{ display: activeTab !== "상판" ? "none" : "" }}>
@@ -5285,6 +5278,7 @@ function RightPanel({ onToast, onScheduleUnlock, caseStatus, onStatusChange, sil
             mokdaeData={mokdaeData}
             mokdaeProductionStarted={mokdaeProductionStarted}
             gigiOrderData={gigiOrderData}
+            onDispatched={onSangpanDispatched}
           />
         </div>
         <div style={{ display: activeTab !== "기기" ? "none" : "" }}>
@@ -5720,7 +5714,27 @@ function App() {
     });
   }, [isNew]);
 
-  /* 탭 컴포넌트 상태 변경 → localStorage 자동 저장 → 대시보드 연동 */
+  /* 목대 발주 요청 발송 → dispatched_mokdae = true → localStorage + DB 영속화 */
+  const handleMokdaeDispatched = useCallback(() => {
+    if (isNew) return;
+    setCaseData(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, dispatchedMokdae: true };
+      persistItem(updated);
+      return updated;
+    });
+  }, [isNew]);
+
+  /* 상판 발주 요청 발송 → dispatched_sangpan = true → localStorage + DB 영속화 */
+  const handleSangpanDispatched = useCallback(() => {
+    if (isNew) return;
+    setCaseData(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, dispatchedSangpan: true };
+      persistItem(updated);
+      return updated;
+    });
+  }, [isNew]);
   const handleStatusChange = useCallback((tabKey, status) => {
     if (isNew) return; // 신규 현장은 ID 미확정 상태이므로 생략
     setCaseData(prev => {
@@ -5840,6 +5854,8 @@ function App() {
           onMokdaeUrgentChange={handleMokdaeUrgentChange}
           onSangpanUrgentChange={handleSangpanUrgentChange}
           caseData={caseData}
+          onMokdaeDispatched={handleMokdaeDispatched}
+          onSangpanDispatched={handleSangpanDispatched}
         />
       </div>
 
