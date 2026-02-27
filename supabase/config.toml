@@ -1,1 +1,4 @@
 project_id = "ykifurzrrbjrgjrznimk"
+
+[functions.parse-materials]
+verify_jwt = false
