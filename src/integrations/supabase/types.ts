@@ -22,6 +22,9 @@ export type Database = {
           cancelled: boolean
           created_at: string
           customer: string | null
+          dispatched_gigi: boolean
+          dispatched_mokdae: boolean
+          dispatched_sangpan: boolean
           gigi_final_date: string | null
           id: string
           manager: string | null
@@ -62,6 +65,9 @@ export type Database = {
           cancelled?: boolean
           created_at?: string
           customer?: string | null
+          dispatched_gigi?: boolean
+          dispatched_mokdae?: boolean
+          dispatched_sangpan?: boolean
           gigi_final_date?: string | null
           id: string
           manager?: string | null
@@ -102,6 +108,9 @@ export type Database = {
           cancelled?: boolean
           created_at?: string
           customer?: string | null
+          dispatched_gigi?: boolean
+          dispatched_mokdae?: boolean
+          dispatched_sangpan?: boolean
           gigi_final_date?: string | null
           id?: string
           manager?: string | null

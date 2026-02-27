@@ -240,6 +240,9 @@ function caseToDbRow(c) {
     sangpan_production_started_at: c.sangpanProductionStartedAt || null,
     sangpan_final_date: c.sangpanFinalDate || null,
     gigi_final_date: c.gigiFinalDate || null,
+    dispatched_mokdae: c.dispatchedMokdae || false,
+    dispatched_gigi: c.dispatchedGigi || false,
+    dispatched_sangpan: c.dispatchedSangpan || false,
   };
 }
 
@@ -281,6 +284,9 @@ function dbRowToCase(r) {
     sangpanProductionStartedAt: r.sangpan_production_started_at || null,
     sangpanFinalDate: r.sangpan_final_date || "",
     gigiFinalDate: r.gigi_final_date || "",
+    dispatchedMokdae: r.dispatched_mokdae || false,
+    dispatchedGigi: r.dispatched_gigi || false,
+    dispatchedSangpan: r.dispatched_sangpan || false,
   };
 }
 
@@ -1688,7 +1694,7 @@ function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast
     document.body.removeChild(a);
   };
 
-  /* ── 발주 요청 전송 ── */
+  /* ── 발주 요청 전송 (목대 → factory) ── */
   const doSendRequest = () => {
     const now = new Date().toLocaleString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
     setVersions(prev => prev.map(v =>
@@ -1696,6 +1702,15 @@ function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast
     ));
     /* 발주서 재발송 시 기존 CAD 승인 해제 */
     if (onCadReset) onCadReset();
+
+    /* DB에 dispatched_mokdae = true 기록 (fire-and-forget) */
+    const _cid = getCaseId();
+    if (_cid) {
+      fetch(`${SUPABASE_URL}/rest/v1/cases?id=eq.${encodeURIComponent(_cid)}`, {
+        method: "PATCH", headers: SB_HEADERS, body: JSON.stringify({ dispatched_mokdae: true }),
+      }).catch(e => console.warn("dispatched_mokdae patch failed:", e));
+    }
+
     /* 발주 확정 후 수정 → 긴급발주 상태 + Section C 리셋 */
     if (mokdaeConfirmedAt) {
       if (onUrgentChange) onUrgentChange();
@@ -3300,9 +3315,9 @@ function GigiTab({ onToast, onGigiOrderSubmit, gigiOrderData }) {
         </div>
       )}
 
-      {/* ── 카테고리 폼 ── */}
-      {!loading && (
-      <div className={`bg-white border border-gray-200 rounded-2xl shadow-sm divide-y divide-gray-100 ${isLocked ? "opacity-60 pointer-events-none" : ""}`}>
+      {/* ── 카테고리 폼 (편집 가능 시) ── */}
+      {!loading && canSubmit && (
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm divide-y divide-gray-100">
         {Object.keys(gigiDb).map(catKey => {
           const sel = selections[catKey] || { mode: "select", value: "", custom: "" };
           const isSet = sel.value && (sel.mode === "select" || sel.custom.trim());
@@ -3341,6 +3356,36 @@ function GigiTab({ onToast, onGigiOrderSubmit, gigiOrderData }) {
                 onChange={newState => handleChange(catKey, newState)}
                 onToast={onToast}
               />
+            </div>
+          );
+        })}
+      </div>
+      )}
+
+      {/* ── 발주 완료/승인 시 DB 저장된 항목 읽기 전용 표시 ── */}
+      {!loading && isLocked && gigiOrderData?.items && (
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm divide-y divide-gray-100 opacity-70">
+        {gigiOrderData.items.map((item, idx) => {
+          const catStyle = GIGI_CATEGORY_ICONS[item.category] || DEFAULT_CAT_STYLE;
+          const displayValue = item.mode === "custom" ? item.custom : item.value;
+          return (
+            <div key={idx} className="px-5 py-4 bg-white">
+              <div className="flex items-center gap-2">
+                <span className={`w-6 h-6 rounded-lg ${catStyle.bg} ${catStyle.color} flex items-center justify-center flex-shrink-0`}>
+                  {catStyle.icon}
+                </span>
+                <span className="text-sm font-bold text-gray-800">{item.category}</span>
+                <span className={`ml-auto text-xs font-semibold px-2 py-0.5 rounded-full border ${
+                  item.mode === "custom"
+                    ? "text-purple-600 bg-purple-100 border-purple-200"
+                    : "text-emerald-600 bg-emerald-100 border-emerald-200"
+                }`}>
+                  {item.mode === "custom" ? "직접 입력" : "선택됨"}
+                </span>
+              </div>
+              <div className="mt-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
+                <p className="text-sm text-gray-700">{displayValue}</p>
+              </div>
             </div>
           );
         })}
@@ -3589,7 +3634,7 @@ function SangpanSectionA({ versions: initVersions, activeVer: initActive, onToas
     document.body.removeChild(a);
   };
 
-  /* ── 발주 요청 전송 ── */
+  /* ── 발주 요청 전송 (상판 → countertop) ── */
   const doSendRequest = () => {
     const now = new Date().toLocaleString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
     setVersions(prev => prev.map(v =>
@@ -3597,6 +3642,15 @@ function SangpanSectionA({ versions: initVersions, activeVer: initActive, onToas
     ));
     /* 발주서 재발송 시 기존 도면 승인 해제 */
     if (onDrawingReset) onDrawingReset();
+
+    /* DB에 dispatched_sangpan = true 기록 (fire-and-forget) */
+    const _cid = getCaseId();
+    if (_cid) {
+      fetch(`${SUPABASE_URL}/rest/v1/cases?id=eq.${encodeURIComponent(_cid)}`, {
+        method: "PATCH", headers: SB_HEADERS, body: JSON.stringify({ dispatched_sangpan: true }),
+      }).catch(e => console.warn("dispatched_sangpan patch failed:", e));
+    }
+
     /* 발주 확정 후 수정 → 긴급발주 상태 + Section C 리셋 */
     if (sangpanConfirmedAt) {
       if (onUrgentChange) onUrgentChange();
@@ -5525,11 +5579,17 @@ function App() {
         const updated = {
           ...prev,
           gigiOrderData: savedOrderData,
+          dispatchedGigi: true,
           status: { ...prev.status, gigi: savedOrderData.status || orderData.status },
         };
         persistItem(updated);
         return updated;
       });
+
+      /* DB에 dispatched_gigi = true 기록 (fire-and-forget) */
+      fetch(`${SUPABASE_URL}/rest/v1/cases?id=eq.${encodeURIComponent(cid)}`, {
+        method: "PATCH", headers: SB_HEADERS, body: JSON.stringify({ dispatched_gigi: true }),
+      }).catch(e => console.warn("dispatched_gigi patch failed:", e));
 
       return { ok: true, data: savedOrderData };
     } catch (e) {
