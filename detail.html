@@ -4384,7 +4384,7 @@ function getTabStatusStyle(text) {
   return "text-gray-400";
 }
 
-function RightPanel({ onToast, onScheduleUnlock, caseStatus, onStatusChange, silcheukData, onProposalsSend, onFinalConfirm, onResultConfirm, onMokdaeSchedule, mokdaeData, onMokdaeVersionsChange, onCadChange, onSectionCChange, onClaimsChange, mokdaeProductionStarted, onGigiSchedule, onGigiOrderSubmit, gigiOrderData, onSangpanSchedule, sangpanData, onSangpanVersionsChange, onDrawingChange, onSangpanSectionCChange, onSangpanClaimsChange, sangpanProductionStarted }) {
+function RightPanel({ onToast, onScheduleUnlock, caseStatus, onStatusChange, silcheukData, onProposalsSend, onFinalConfirm, onResultConfirm, onMokdaeSchedule, mokdaeData, onMokdaeVersionsChange, onCadChange, onSectionCChange, onClaimsChange, mokdaeProductionStarted, onGigiSchedule, onGigiOrderSubmit, gigiOrderData, onSangpanSchedule, sangpanData, onSangpanVersionsChange, onDrawingChange, onSangpanSectionCChange, onSangpanClaimsChange, sangpanProductionStarted, onMokdaeUrgentChange }) {
   const [activeTab, setActiveTab] = useState("목대");
 
   return (
@@ -4461,7 +4461,7 @@ function RightPanel({ onToast, onScheduleUnlock, caseStatus, onStatusChange, sil
             onSectionCChange={onSectionCChange}
             onClaimsChange={onClaimsChange}
             mokdaeProductionStarted={mokdaeProductionStarted}
-            onUrgentChange={handleMokdaeUrgentChange}
+            onUrgentChange={onMokdaeUrgentChange}
           />
         </div>
         <div style={{ display: activeTab !== "상판" ? "none" : "" }}>
@@ -4983,6 +4983,7 @@ function App() {
           onSangpanSectionCChange={handleSangpanSectionCChange}
           onSangpanClaimsChange={handleSangpanClaimsChange}
           sangpanProductionStarted={caseData.sangpanProductionStarted || false}
+          onMokdaeUrgentChange={handleMokdaeUrgentChange}
         />
       </div>
 
