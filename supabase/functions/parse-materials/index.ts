@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
 
     const categoryCol = findCol(["소분류", "카테고리", "category"]);
     const brandCol = findCol(["브랜드", "brand"]);
-    const itemCol = findCol(["건자재항목", "드롭다운", "제품명", "item", "항목"]);
+    const itemCol = findCol(["드롭다운", "건자재항목"]);
 
     if (!categoryCol || !itemCol) {
       return new Response(
