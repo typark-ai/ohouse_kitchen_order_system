@@ -311,6 +311,43 @@ async function loadCaseFromDB(id) {
     return rows.length > 0 ? dbRowToCase(rows[0]) : null;
   } catch (e) { console.warn("DB load failed:", e); return null; }
 }
+
+async function fetchGigiOrderFromDB(caseId) {
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/gigi_store?case_id=eq.${encodeURIComponent(caseId)}&select=data`,
+      { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
+    );
+    if (!res.ok) return null;
+    const rows = await res.json();
+    return rows.length > 0 && rows[0]?.data ? rows[0].data : null;
+  } catch (e) {
+    console.warn("기기 DB 로드 실패:", e);
+    return null;
+  }
+}
+
+async function upsertGigiOrderToDB(caseId, orderData) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/gigi_store?on_conflict=case_id`, {
+    method: "POST",
+    headers: {
+      ...SB_HEADERS,
+      "Prefer": "resolution=merge-duplicates,return=representation",
+    },
+    body: JSON.stringify({ case_id: caseId, data: orderData }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`기기 발주 DB 저장 실패 (${res.status})`);
+  }
+
+  const rows = await res.json().catch(() => []);
+  if (rows.length > 0 && rows[0]?.data) return rows[0].data;
+
+  const reloaded = await fetchGigiOrderFromDB(caseId);
+  if (!reloaded) throw new Error("기기 발주 저장 후 재조회 실패");
+  return reloaded;
+}
 function getCaseId() {
   // sessionStorage 우선, 없으면 URL query param 폴백 (직접 URL 접근 시)
   try {
@@ -3090,7 +3127,7 @@ function GigiTab({ onToast, onGigiOrderSubmit, gigiOrderData }) {
 
   const handleDateChange = (val) => setGigiDate(val);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!canSubmit) return;
     if (selectedCount === 0) {
       onToast({ type: "warning", title: "선택 항목 없음", message: "최소 1개 이상의 기기를 선택하거나 입력해주세요." });
@@ -3100,30 +3137,37 @@ function GigiTab({ onToast, onGigiOrderSubmit, gigiOrderData }) {
       onToast({ type: "warning", title: "납기 일정 미선택", message: "기기 납기 일정을 선택해주세요." });
       return;
     }
+
     setSubmitting(true);
-    setTimeout(() => {
-      setSubmitting(false);
-      const items = selectedItems.map(([cat, s]) => ({
-        category: cat,
-        mode: s.mode,
-        value: s.value,
-        custom: s.custom || "",
-      }));
-      if (onGigiOrderSubmit) onGigiOrderSubmit({
+    const items = selectedItems.map(([cat, s]) => ({
+      category: cat,
+      mode: s.mode,
+      value: s.value,
+      custom: s.custom || "",
+    }));
+
+    try {
+      const submitPayload = {
         items,
         requestedDate: gigiDate,
         status: "발주요청완료",
         submittedAt: new Date().toISOString(),
         rejectionReason: "",
         rejectedAt: "",
-      });
+      };
+
+      const result = onGigiOrderSubmit ? await onGigiOrderSubmit(submitPayload) : { ok: false };
+      if (!result?.ok) return;
+
       onToast({
         type: "success",
         title: "기기 발주 요청 완료",
-        message: `${selectedCount}개 기기의 발주 요청이 접수되었습니다. 희망 납기: ${gigiDate}`,
+        message: `${selectedCount}개 기기의 발주 요청이 DB에 저장되었습니다. 희망 납기: ${gigiDate}`,
         duration: 5000,
       });
-    }, 1800);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const today = new Date().toISOString().slice(0, 10);
@@ -5187,21 +5231,18 @@ function App() {
     (async () => {
       try {
         // 케이스 데이터 + 기기 데이터 동시 로드
-        const [caseFromDb, gigiRes] = await Promise.all([
+        const [caseFromDb, gigiOrderFromDb] = await Promise.all([
           loadCaseFromDB(caseId),
-          fetch(
-            `${SUPABASE_URL}/rest/v1/gigi_store?case_id=eq.${encodeURIComponent(caseId)}&select=data`,
-            { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
-          ).then(r => r.ok ? r.json() : []).catch(() => []),
+          fetchGigiOrderFromDB(caseId),
         ]);
 
         setCaseData(prev => {
           let merged = caseFromDb ? { ...prev, ...caseFromDb } : prev;
-          // 기기 데이터 병합
-          if (gigiRes.length > 0 && gigiRes[0].data) {
-            merged = { ...merged, gigiOrderData: gigiRes[0].data };
-            if (gigiRes[0].data.status) {
-              merged.status = { ...merged.status, gigi: gigiRes[0].data.status };
+          // 기기 데이터 병합 (DB 기준)
+          if (gigiOrderFromDb) {
+            merged = { ...merged, gigiOrderData: gigiOrderFromDb };
+            if (gigiOrderFromDb.status) {
+              merged.status = { ...merged.status, gigi: gigiOrderFromDb.status };
             }
           }
           // localStorage도 동기화
@@ -5247,19 +5288,16 @@ function App() {
         // Re-fetch gigi data from DB on tab focus
         (async () => {
           try {
-            const gigiRes = await fetch(
-              `${SUPABASE_URL}/rest/v1/gigi_store?case_id=eq.${encodeURIComponent(caseId)}&select=data`,
-              { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
-            ).then(r => r.ok ? r.json() : []).catch(() => []);
-            
+            const gigiOrderFromDb = await fetchGigiOrderFromDB(caseId);
+
             setCaseData(prev => {
               if (!prev) return prev;
               const fresh = loadItemById(caseId);
               let merged = fresh ? { ...prev, ...fresh } : prev;
-              if (gigiRes.length > 0 && gigiRes[0].data) {
-                merged = { ...merged, gigiOrderData: gigiRes[0].data };
-                if (gigiRes[0].data.status) {
-                  merged.status = { ...merged.status, gigi: gigiRes[0].data.status };
+              if (gigiOrderFromDb) {
+                merged = { ...merged, gigiOrderData: gigiOrderFromDb };
+                if (gigiOrderFromDb.status) {
+                  merged.status = { ...merged.status, gigi: gigiOrderFromDb.status };
                 }
               } else if (prev.gigiOrderData) {
                 merged.gigiOrderData = prev.gigiOrderData;
@@ -5471,40 +5509,35 @@ function App() {
     });
   }, [isNew]);
 
-  const handleGigiOrderSubmit = useCallback((orderData) => {
-    if (isNew) return;
-    setCaseData(prev => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        gigiOrderData: orderData,
-        status: { ...prev.status, gigi: orderData.status },
-      };
-      persistItem(updated);
+  const handleGigiOrderSubmit = useCallback(async (orderData) => {
+    if (isNew) return { ok: false };
+    const cid = caseId;
+    if (!cid) {
+      addToast({ type: "error", title: "저장 실패", message: "상담 ID를 확인할 수 없어 기기 발주를 저장하지 못했습니다." });
+      return { ok: false };
+    }
 
-      /* DB(gigi_store)에도 저장 */
-      const cid = prev.id;
-      (async () => {
-        try {
-          // upsert: case_id가 PK이므로 conflict 시 update
-          await fetch(`${SUPABASE_URL}/rest/v1/gigi_store`, {
-            method: "POST",
-            headers: {
-              "apikey": SUPABASE_KEY,
-              "Authorization": `Bearer ${SUPABASE_KEY}`,
-              "Content-Type": "application/json",
-              "Prefer": "resolution=merge-duplicates",
-            },
-            body: JSON.stringify({ case_id: cid, data: orderData }),
-          });
-        } catch (e) {
-          console.warn("기기 발주 DB 저장 실패:", e);
-        }
-      })();
+    try {
+      const savedOrderData = await upsertGigiOrderToDB(cid, orderData);
 
-      return updated;
-    });
-  }, [isNew]);
+      setCaseData(prev => {
+        if (!prev) return prev;
+        const updated = {
+          ...prev,
+          gigiOrderData: savedOrderData,
+          status: { ...prev.status, gigi: savedOrderData.status || orderData.status },
+        };
+        persistItem(updated);
+        return updated;
+      });
+
+      return { ok: true, data: savedOrderData };
+    } catch (e) {
+      console.warn("기기 발주 DB 저장 실패:", e);
+      addToast({ type: "error", title: "저장 실패", message: "기기 발주 요청 DB 저장에 실패했습니다. 다시 시도해주세요." });
+      return { ok: false, error: e };
+    }
+  }, [isNew, caseId, addToast]);
 
   /* ═══ 상판 Handlers (목대와 동일 패턴) ═══ */
 
