@@ -1,31 +1,63 @@
 
-
-# 재마감 기능 비활성화 (Coming Soon 처리)
+# 어드민 인증 시스템 구축 계획
 
 ## 개요
-재마감 관련 기능만 정확히 4곳에서 비활성화합니다. 다른 코드는 일절 수정하지 않습니다.
+관리자 대시보드(`index.html`)와 상세 페이지(`detail.html`)에 로그인 보호를 추가하고, 어드민 전용 회원가입/로그인 페이지를 만듭니다.
 
-## 수정 범위 (detail.html만 수정)
+## 구현 단계
 
-### 1. MokdaeSectionC - "재마감 요청" 버튼 (2593-2603행)
-- 버튼을 `disabled` 처리, `onClick` 제거
-- 텍스트를 "재마감 요청 (Coming Soon)"으로 변경
-- 스타일을 회색(`text-gray-400 bg-gray-100 border-gray-200 cursor-not-allowed`)으로 변경
+### 1. 데이터베이스 변경
+- `admin_accounts` 테이블 생성 (id, user_id, email, approved, created_at)
+- 초대 코드 컬럼 또는 별도 승인 로직 추가 -- 첫 번째 가입자는 자동 승인, 이후 가입자는 기존 어드민이 승인
+- RLS 정책 설정
 
-### 2. MokdaeSectionD - 재마감 요청 아코디언 (2657행~)
-- 섹션 헤더 제목 옆에 "Coming Soon" 뱃지 추가
-- 신규 요청 작성 폼 영역의 input, textarea, button을 `disabled` 처리
-- 기존 전송 내역(claims)은 읽기 전용으로 그대로 유지
+### 2. 어드민 로그인/가입 페이지 생성 (`admin-login.html`)
+- 이메일/비밀번호 회원가입 및 로그인 폼
+- 회원가입 시 초대 코드 입력 필드 (선택사항) 또는 기존 어드민 승인 방식
+- 승인 대기 상태 안내 화면
+- 로그인 성공 시 `index.html`로 리다이렉트
 
-### 3. SangpanSectionC - "재마감 요청" 버튼 (4801-4811행)
-- MokdaeSectionC와 동일한 패턴 적용
+### 3. `index.html` 수정
+- 페이지 로드 시 `localStorage`의 토큰으로 인증 상태 확인
+- 인증되지 않은 경우 `admin-login.html`로 리다이렉트
+- `admin_accounts` 테이블에서 해당 유저가 승인된 어드민인지 서버 측 확인
+- 어드민 관리 탭에 "어드민 계정 승인" 기능 추가
+- 로그아웃 버튼 추가
 
-### 4. SangpanSectionD - 재마감 요청 아코디언 (4823행~)
-- MokdaeSectionD와 동일한 패턴 적용
+### 4. `detail.html` 수정
+- 동일한 인증 가드 로직 적용
+- 미인증 시 `admin-login.html`로 리다이렉트
 
-## 수정하지 않는 부분
-- 상태 옵션 배열(MOKDAE_STATUS_OPTS 등)의 "재마감확정" 등 기존 값
-- factory.html / countertop.html의 재마감 관련 표시 로직
-- 긴급 조정 버튼 (재마감과 별개 기능)
-- 그 외 모든 코드
+### 5. `vite.config.js` 수정
+- `admin-login.html`을 빌드 엔트리에 추가
 
+## 기술 상세
+
+### DB 스키마
+```sql
+CREATE TABLE public.admin_accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL UNIQUE,
+  email TEXT NOT NULL,
+  approved BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE public.admin_accounts ENABLE ROW LEVEL SECURITY;
+```
+
+### 인증 가드 로직 (index.html, detail.html 공통)
+```text
+1. localStorage에서 sb_access_token 확인
+2. 없으면 -> admin-login.html로 리다이렉트
+3. 있으면 -> admin_accounts 테이블에서 user_id + approved=true 확인
+4. 미승인이면 -> 로그아웃 후 리다이렉트
+5. 통과하면 -> 정상 렌더링
+```
+
+### 첫 번째 어드민 문제 해결
+- 첫 가입자(admin_accounts 테이블이 비어있을 때)는 자동으로 `approved: true`로 설정
+- 이후 가입자는 기존 승인된 어드민이 대시보드에서 승인
+
+### 어드민 계정 관리
+- 기존 "가입 승인" 탭 옆에 "어드민 관리" 섹션 추가
+- 승인 대기 중인 어드민 목록 표시 및 승인/거부 기능
