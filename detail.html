@@ -1305,7 +1305,7 @@ function Modal({ open, onClose, children, maxW = "max-w-lg" }) {
 /* ═══════════════════════════════════════════════════════
    목대 탭 — Section A: 발주 서류 & 버전 히스토리
 ═══════════════════════════════════════════════════════ */
-function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast, onStatusChange, silcheukImages = [], onMokdaeSchedule, uploadedFiles: initUploadedFiles = {}, onVersionsChange, silcheukFinalDate = "", mokdaeProductionStarted = false, mokdaeConfirmedAt = null, onCadReset, onUrgentChange }) {
+function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast, onStatusChange, silcheukImages = [], onMokdaeSchedule, uploadedFiles: initUploadedFiles = {}, onVersionsChange, silcheukFinalDate = "", mokdaeProductionStarted = false, mokdaeConfirmedAt = null, onCadReset, onUrgentChange, onSectionCReset }) {
   const [versions, setVersions]     = useState(initVersions);
   const [activeVer, setActiveVer]   = useState(initActive);
   const [uploadedFiles, setUploadedFiles] = useState(initUploadedFiles); // versionNo → [{id,name,size,url,isImage}]
@@ -1313,6 +1313,7 @@ function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast
   const [silcheukOpen, setSilcheukOpen] = useState(true);
   const [lightbox, setLightbox]     = useState(null); // { url, name } | null
   const fileInputRef = useRef(null);
+  const [urgentConfirmOpen, setUrgentConfirmOpen] = useState(false);
 
   const current       = versions.find(v => v.versionNo === activeVer);
   const isNewVersion  = current?.isNew === true;
@@ -1370,10 +1371,19 @@ function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast
 
   /* ── 새 버전 추가 ── */
   const handleAddVersion = () => {
+    /* 발주 확정 후 버전 추가 → 긴급발주 확인 */
+    if (mokdaeConfirmedAt) {
+      setUrgentConfirmOpen(true);
+      return;
+    }
+    doAddVersion();
+  };
+  const doAddVersion = () => {
     const maxNo = versions.length > 0 ? Math.max(...versions.map(v => v.versionNo)) : 0;
     const newVer = { versionNo: maxNo + 1, files: [], factoryChecked: false, sentAt: "", sentBy: "", memo: "", mokdaeDate: "", isNew: true };
     setVersions(prev => [...prev, newVer]);
     setActiveVer(maxNo + 1);
+    setUrgentConfirmOpen(false);
   };
 
   /* ── 파일 업로드 (canvas 리사이즈 → dataURL → localStorage 영속화) ── */
@@ -1438,10 +1448,11 @@ function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast
     ));
     /* 발주서 재발송 시 기존 CAD 승인 해제 */
     if (onCadReset) onCadReset();
-    /* 발주 확정 후 수정 → 긴급발주 상태 */
+    /* 발주 확정 후 수정 → 긴급발주 상태 + Section C 리셋 */
     if (mokdaeConfirmedAt) {
       if (onUrgentChange) onUrgentChange();
-      onToast({ type: "warning", title: `발주 V${activeVer} 긴급 발송`, message: "확정 후 수정 발송 — 긴급발주 상태로 변경됩니다.", duration: 5000 });
+      if (onSectionCReset) onSectionCReset();
+      onToast({ type: "warning", title: `발주 V${activeVer} 긴급 발송`, message: "확정 후 수정 발송 — 긴급발주 상태로 변경되며, 소비자 승인 및 발주 확정이 리셋됩니다.", duration: 5000 });
     } else {
       onToast({ type: "success", title: `발주 V${activeVer} 요청 완료`, message: "공장으로 발주 요청이 전송되었습니다." });
     }
@@ -1815,6 +1826,43 @@ function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast
             <div className="mt-3 flex items-center gap-4 w-full px-1">
               <p className="flex-1 text-white/70 text-sm truncate">{lightbox.name}</p>
               <span className="flex-shrink-0 text-xs text-white/40 bg-white/10 px-2 py-1 rounded">ESC로 닫기</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 긴급발주 확인 모달 ── */}
+      {urgentConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setUrgentConfirmOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-6 pt-6 pb-4">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">긴급발주 요청</h3>
+                  <p className="text-xs text-gray-400 mt-0.5">최종 발주 확정 건</p>
+                </div>
+              </div>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                해당 건은 <span className="font-bold text-red-600">최종 발주가 확정</span>된 상태입니다.<br/>
+                버전을 추가하면 <span className="font-bold text-red-600">긴급발주 요청</span>이 들어가게 됩니다.<br/>
+                그래도 진행하시겠습니까?
+              </p>
+            </div>
+            <div className="flex border-t border-gray-100">
+              <button onClick={() => setUrgentConfirmOpen(false)}
+                className="flex-1 py-3.5 text-sm font-semibold text-gray-500 hover:bg-gray-50 transition-colors">
+                취소
+              </button>
+              <div className="w-px bg-gray-100"></div>
+              <button onClick={doAddVersion}
+                className="flex-1 py-3.5 text-sm font-bold text-red-600 hover:bg-red-50 transition-colors">
+                긴급발주 진행
+              </button>
             </div>
           </div>
         </div>
@@ -4245,6 +4293,11 @@ function MokdaeTab({ onToast, onStatusChange, silcheukImages, onMokdaeSchedule, 
     }
   }, [md.cadVersions, onCadChange]);
 
+  /* 긴급발주 시 Section C (소비자 승인 & 발주 확정) 리셋 */
+  const handleSectionCReset = useCallback(() => {
+    if (onSectionCChange) onSectionCChange({ consumerApproved: false, confirmedAt: null });
+  }, [onSectionCChange]);
+
   return (
     <div className="p-5 space-y-5 max-w-4xl">
 
@@ -4262,6 +4315,7 @@ function MokdaeTab({ onToast, onStatusChange, silcheukImages, onMokdaeSchedule, 
         mokdaeConfirmedAt={md.confirmedAt || null}
         onCadReset={handleCadReset}
         onUrgentChange={onUrgentChange}
+        onSectionCReset={handleSectionCReset}
       />
       <MokdaeSectionB
         cadVersions={md.cadVersions || []}
