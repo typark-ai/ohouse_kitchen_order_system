@@ -142,8 +142,37 @@ const SUPABASE_URL = "https://ykifurzrrbjrgjrznimk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlraWZ1cnpycmJqcmdqcnpuaW1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMjE3NTcsImV4cCI6MjA4NzY5Nzc1N30.BVTlrG_Q_cXqj6qOa_rZPXrCs7MhwuR9o8koncGoUU0";
 const SB_HEADERS = { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" };
 
+function safeText(v) {
+  if (typeof v === "string") return v;
+  if (v == null) return "";
+  return String(v);
+}
+
+function ensureObject(v) {
+  return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+}
+
+function normalizeCaseShape(raw) {
+  if (!raw) return null;
+  const schedule = ensureObject(raw.schedule);
+  const status = ensureObject(raw.status);
+  const normalized = {
+    ...raw,
+    id: safeText(raw.id),
+    customer: safeText(raw.customer),
+    phone: safeText(raw.phone),
+    address: safeText(raw.address),
+    manager: safeText(raw.manager),
+    schedule,
+    status,
+    archived: !!raw.archived,
+    cancelled: !!raw.cancelled,
+  };
+  return normalized.id ? normalized : null;
+}
+
 function dbRowToCase(r) {
-  return {
+  return normalizeCaseShape({
     id: r.id, customer: r.customer || "", phone: r.phone || "", address: r.address || "", manager: r.manager || "",
     schedule: r.schedule || {}, status: r.status || {},
     archived: r.archived || false, cancelled: r.cancelled || false,
@@ -165,7 +194,7 @@ function dbRowToCase(r) {
     silcheukFinalized: r.silcheuk_finalized || false,
     silcheukFinalDate: r.silcheuk_final_date || "", silcheukFinalTime: r.silcheuk_final_time || "",
     silcheukUploadResult: r.silcheuk_upload_result || null, silcheukResultDone: r.silcheuk_result_done || false,
-  };
+  });
 }
 
 async function loadAllCasesFromDB() {
@@ -174,18 +203,17 @@ async function loadAllCasesFromDB() {
       headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
     });
     if (!res.ok) throw new Error("fetch failed");
-    return (await res.json()).map(dbRowToCase);
+    return (await res.json()).map(dbRowToCase).filter(Boolean);
   } catch (e) { console.warn("DB load failed:", e); return null; }
 }
 
 async function patchCaseInDB(caseId, fields) {
-  try {
-    await fetch(`${SUPABASE_URL}/rest/v1/cases?id=eq.${encodeURIComponent(caseId)}`, {
-      method: "PATCH",
-      headers: SB_HEADERS,
-      body: JSON.stringify(fields),
-    });
-  } catch (e) { console.warn("DB patch failed:", e); }
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/cases?id=eq.${encodeURIComponent(caseId)}`, {
+    method: "PATCH",
+    headers: SB_HEADERS,
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(`DB patch failed: ${caseId}`);
 }
 
 /* ── localStorage 유틸 (하위 호환) ── */
@@ -790,31 +818,33 @@ function App() {
           headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
         }).then(r => r.ok ? r.json() : []).catch(() => []),
       ]);
+
       if (casesFromDb) {
-        // gigi_store 데이터를 cases에 병합
         const gigiMap = {};
-        gigiRows.forEach(g => { gigiMap[g.case_id] = g.data; });
-        const merged = casesFromDb.map(c => {
-          const gigiData = gigiMap[c.id];
-          if (gigiData) {
-            return {
+        gigiRows.forEach(g => {
+          if (g?.case_id) gigiMap[g.case_id] = ensureObject(g.data);
+        });
+
+        const merged = casesFromDb
+          .map(c => {
+            const gigiData = gigiMap[c.id];
+            if (!gigiData || Object.keys(gigiData).length === 0) return normalizeCaseShape(c);
+            return normalizeCaseShape({
               ...c,
               gigiOrderData: gigiData,
-              status: { ...c.status, gigi: gigiData.status || c.status.gigi },
-            };
-          }
-          return c;
-        });
+              status: { ...ensureObject(c.status), gigi: gigiData.status || ensureObject(c.status).gigi },
+            });
+          })
+          .filter(Boolean);
+
         setItems(merged);
-        // localStorage도 동기화 (detail.html 하위 호환)
         saveData(merged);
       } else {
-        // DB 실패 시 localStorage fallback
-        setItems(loadData());
+        setItems((loadData() || []).map(normalizeCaseShape).filter(Boolean));
       }
     } catch (e) {
       console.warn("DB load failed, fallback to localStorage:", e);
-      setItems(loadData());
+      setItems((loadData() || []).map(normalizeCaseShape).filter(Boolean));
     } finally {
       setLoading(false);
     }
@@ -829,6 +859,12 @@ function App() {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [refreshFromDB]);
 
+  /* 실시간 누락 대비 폴링 fallback */
+  useEffect(() => {
+    const timer = setInterval(() => { refreshFromDB(); }, 20000);
+    return () => clearInterval(timer);
+  }, [refreshFromDB]);
+
   /* 탭 전환 시 선택 초기화 */
   const handleTabChange = t => { setTab(t); setSelectedIds([]); setSearch(""); setManagerFilter(""); };
 
@@ -837,12 +873,18 @@ function App() {
     if (tab === "cancelled") return items.filter(r => r.cancelled === true);
     return items.filter(r => !r.cancelled && r.archived === (tab === "archived"));
   }, [items, tab]);
-  const managers = useMemo(() => [...new Set(tabData.map(d => d.manager))].sort(), [tabData]);
+  const managers = useMemo(
+    () => [...new Set(tabData.map(d => safeText(d.manager)).filter(Boolean))].sort(),
+    [tabData]
+  );
   const filtered = useMemo(() => {
     return tabData.filter(row => {
       const q = search.toLowerCase();
-      const matchSearch = !q || row.customer.toLowerCase().includes(q) || row.id.toLowerCase().includes(q) || row.address.toLowerCase().includes(q);
-      const matchManager = !managerFilter || row.manager === managerFilter;
+      const matchSearch = !q
+        || safeText(row.customer).toLowerCase().includes(q)
+        || safeText(row.id).toLowerCase().includes(q)
+        || safeText(row.address).toLowerCase().includes(q);
+      const matchManager = !managerFilter || safeText(row.manager) === managerFilter;
       return matchSearch && matchManager;
     });
   }, [tabData, search, managerFilter]);
@@ -856,49 +898,49 @@ function App() {
   };
 
   /* 현장 이동 액션 (아카이브 ↔ 진행중) → DB 반영 */
-  const handleMove = () => {
+  const handleMove = async () => {
     if (selectedIds.length === 0) return;
     const toArchive = tab === "active";
+
     setItems(prev => {
-      const updated = prev.map(r =>
-        selectedIds.includes(r.id) ? { ...r, archived: toArchive } : r
-      );
+      const updated = prev.map(r => selectedIds.includes(r.id) ? { ...r, archived: toArchive } : r);
       saveData(updated);
       return updated;
     });
-    // DB 반영
-    selectedIds.forEach(id => patchCaseInDB(id, { archived: tab === "active" }));
+
+    await Promise.allSettled(selectedIds.map(id => patchCaseInDB(id, { archived: toArchive })));
+    await refreshFromDB();
     setSelectedIds([]);
   };
 
   /* 현장 삭제 액션 → cancelled: true → DB 반영 */
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (selectedIds.length === 0) return;
+
     setItems(prev => {
-      const updated = prev.map(r =>
-        selectedIds.includes(r.id) ? { ...r, cancelled: true } : r
-      );
+      const updated = prev.map(r => selectedIds.includes(r.id) ? { ...r, cancelled: true } : r);
       saveData(updated);
       return updated;
     });
-    // DB 반영
-    selectedIds.forEach(id => patchCaseInDB(id, { cancelled: true }));
+
+    await Promise.allSettled(selectedIds.map(id => patchCaseInDB(id, { cancelled: true })));
+    await refreshFromDB();
     setSelectedIds([]);
     setDeleteConfirmOpen(false);
   };
 
   /* 취소된 현장 복원 → 진행중으로 → DB 반영 */
-  const handleRestore = () => {
+  const handleRestore = async () => {
     if (selectedIds.length === 0) return;
+
     setItems(prev => {
-      const updated = prev.map(r =>
-        selectedIds.includes(r.id) ? { ...r, cancelled: false, archived: false } : r
-      );
+      const updated = prev.map(r => selectedIds.includes(r.id) ? { ...r, cancelled: false, archived: false } : r);
       saveData(updated);
       return updated;
     });
-    // DB 반영
-    selectedIds.forEach(id => patchCaseInDB(id, { cancelled: false, archived: false }));
+
+    await Promise.allSettled(selectedIds.map(id => patchCaseInDB(id, { cancelled: false, archived: false })));
+    await refreshFromDB();
     setSelectedIds([]);
   };
 
