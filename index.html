@@ -143,6 +143,83 @@ function saveData(items) {
   try { localStorage.setItem(LS_KEY, JSON.stringify(items)); } catch(e) {}
 }
 
+/* ── Supabase DB 유틸 ── */
+const SUPABASE_URL = "https://ykifurzrrbjrgjrznimk.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlraWZ1cnpycmJqcmdqcnpuaW1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMjE3NTcsImV4cCI6MjA4NzY5Nzc1N30.BVTlrG_Q_cXqj6qOa_rZPXrCs7MhwuR9o8koncGoUU0";
+
+function dbRowToCase(r) {
+  return {
+    id: r.id, customer: r.customer, phone: r.phone, address: r.address, manager: r.manager,
+    schedule: r.schedule || {}, status: r.status || {},
+    archived: r.archived || false, cancelled: r.cancelled || false,
+    silcheukProposals: r.silcheuk_proposals || [], silcheukSent: r.silcheuk_sent || false,
+    silcheukEngResponse: r.silcheuk_eng_response || null,
+    silcheukFinalized: r.silcheuk_finalized || false,
+    silcheukFinalDate: r.silcheuk_final_date || "", silcheukFinalTime: r.silcheuk_final_time || "",
+    silcheukUploadResult: r.silcheuk_upload_result || null, silcheukResultDone: r.silcheuk_result_done || false,
+    mokdaeVersions: r.mokdae_versions || [], mokdaeUploadedFiles: r.mokdae_uploaded_files || {},
+    cadVersions: r.cad_versions || [],
+    mokdaeConsumerApproved: r.mokdae_consumer_approved || false, mokdaeConfirmedAt: r.mokdae_confirmed_at || null,
+    mokdaeClaims: r.mokdae_claims || [],
+    mokdaeProductionStarted: r.mokdae_production_started || false, mokdaeProductionStartedAt: r.mokdae_production_started_at || null,
+    mokdaeFinalDate: r.mokdae_final_date || "",
+    sangpanVersions: r.sangpan_versions || [], sangpanUploadedFiles: r.sangpan_uploaded_files || {},
+    sangpanDrawingVersions: r.sangpan_drawing_versions || [],
+    sangpanConsumerApproved: r.sangpan_consumer_approved || false, sangpanConfirmedAt: r.sangpan_confirmed_at || null,
+    sangpanClaims: r.sangpan_claims || [],
+    sangpanProductionStarted: r.sangpan_production_started || false, sangpanProductionStartedAt: r.sangpan_production_started_at || null,
+    sangpanFinalDate: r.sangpan_final_date || "",
+    gigiFinalDate: r.gigi_final_date || "",
+  };
+}
+
+function caseToDbRow(c) {
+  return {
+    id: c.id, customer: c.customer || null, phone: c.phone || null, address: c.address || null, manager: c.manager || null,
+    schedule: c.schedule || {}, status: c.status || {},
+    archived: c.archived || false, cancelled: c.cancelled || false,
+    silcheuk_proposals: c.silcheukProposals || [], silcheuk_sent: c.silcheukSent || false,
+    silcheuk_eng_response: c.silcheukEngResponse || null,
+    silcheuk_finalized: c.silcheukFinalized || false,
+    silcheuk_final_date: c.silcheukFinalDate || null, silcheuk_final_time: c.silcheukFinalTime || null,
+    silcheuk_upload_result: c.silcheukUploadResult || null, silcheuk_result_done: c.silcheukResultDone || false,
+    mokdae_versions: c.mokdaeVersions || [], mokdae_uploaded_files: c.mokdaeUploadedFiles || {},
+    cad_versions: c.cadVersions || [],
+    mokdae_consumer_approved: c.mokdaeConsumerApproved || false, mokdae_confirmed_at: c.mokdaeConfirmedAt || null,
+    mokdae_claims: c.mokdaeClaims || [],
+    mokdae_production_started: c.mokdaeProductionStarted || false, mokdae_production_started_at: c.mokdaeProductionStartedAt || null,
+    mokdae_final_date: c.mokdaeFinalDate || null,
+    sangpan_versions: c.sangpanVersions || [], sangpan_uploaded_files: c.sangpanUploadedFiles || {},
+    sangpan_drawing_versions: c.sangpanDrawingVersions || [],
+    sangpan_consumer_approved: c.sangpanConsumerApproved || false, sangpan_confirmed_at: c.sangpanConfirmedAt || null,
+    sangpan_claims: c.sangpanClaims || [],
+    sangpan_production_started: c.sangpanProductionStarted || false, sangpan_production_started_at: c.sangpanProductionStartedAt || null,
+    sangpan_final_date: c.sangpanFinalDate || null,
+    gigi_final_date: c.gigiFinalDate || null,
+  };
+}
+
+async function loadAllCasesFromDB() {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/cases?select=*&order=created_at.desc`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
+    });
+    if (!res.ok) throw new Error("fetch failed");
+    const rows = await res.json();
+    return rows.map(dbRowToCase);
+  } catch (e) { console.warn("DB load failed:", e); return null; }
+}
+
+async function syncCaseToDB(caseData) {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/cases`, {
+      method: "POST",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
+      body: JSON.stringify(caseToDbRow(caseData)),
+    });
+  } catch (e) { console.warn("DB sync failed:", e); }
+}
+
 function generateNewId(items) {
   const year = new Date().getFullYear();
   const nums = items.map(i => {
@@ -720,8 +797,19 @@ function App() {
   const [dbModalOpen, setDbModalOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
-  /* localStorage 동기화 */
+  /* localStorage 동기화 + DB 동기화 */
   useEffect(() => { saveData(items); }, [items]);
+
+  /* DB에서 초기 데이터 로드 */
+  useEffect(() => {
+    (async () => {
+      const fromDb = await loadAllCasesFromDB();
+      if (fromDb && fromDb.length > 0) {
+        setItems(fromDb);
+        saveData(fromDb);
+      }
+    })();
+  }, []);
 
   /* 탭 전환 시 선택 초기화 */
   const handleTabChange = t => { setTab(t); setSelectedIds([]); setSearch(""); setManagerFilter(""); };
@@ -753,18 +841,22 @@ function App() {
   const handleMove = () => {
     if (selectedIds.length === 0) return;
     const toArchive = tab === "active";
-    setItems(prev => prev.map(r =>
-      selectedIds.includes(r.id) ? { ...r, archived: toArchive } : r
-    ));
+    setItems(prev => {
+      const next = prev.map(r => selectedIds.includes(r.id) ? { ...r, archived: toArchive } : r);
+      next.filter(r => selectedIds.includes(r.id)).forEach(r => syncCaseToDB(r));
+      return next;
+    });
     setSelectedIds([]);
   };
 
   /* 현장 삭제 액션 → cancelled: true */
   const handleDelete = () => {
     if (selectedIds.length === 0) return;
-    setItems(prev => prev.map(r =>
-      selectedIds.includes(r.id) ? { ...r, cancelled: true } : r
-    ));
+    setItems(prev => {
+      const next = prev.map(r => selectedIds.includes(r.id) ? { ...r, cancelled: true } : r);
+      next.filter(r => selectedIds.includes(r.id)).forEach(r => syncCaseToDB(r));
+      return next;
+    });
     setSelectedIds([]);
     setDeleteConfirmOpen(false);
   };
@@ -772,9 +864,11 @@ function App() {
   /* 취소된 현장 복원 → 진행중으로 */
   const handleRestore = () => {
     if (selectedIds.length === 0) return;
-    setItems(prev => prev.map(r =>
-      selectedIds.includes(r.id) ? { ...r, cancelled: false, archived: false } : r
-    ));
+    setItems(prev => {
+      const next = prev.map(r => selectedIds.includes(r.id) ? { ...r, cancelled: false, archived: false } : r);
+      next.filter(r => selectedIds.includes(r.id)).forEach(r => syncCaseToDB(r));
+      return next;
+    });
     setSelectedIds([]);
   };
 
