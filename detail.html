@@ -2841,7 +2841,7 @@ function GigiTab({ onToast, onGigiOrderSubmit, gigiOrderData }) {
     } else {
       setSelections(buildInitialSelections(gigiDb));
     }
-  }, [gigiDb]);
+  }, [gigiDb, gigiOrderData]);
 
   /* 반려 시 selections/date 유지하되 편집 가능 */
 
