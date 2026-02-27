@@ -12,6 +12,7 @@ export default defineConfig({
         supplier: 'supplier.html',
         countertop: 'countertop.html',
         'portal-login': 'portal-login.html',
+        'admin-login': 'admin-login.html',
       },
     },
   },
