@@ -100,6 +100,30 @@ export type Database = {
           },
         ]
       }
+      materials: {
+        Row: {
+          brand: string | null
+          category: string
+          created_at: string
+          id: string
+          item_name: string
+        }
+        Insert: {
+          brand?: string | null
+          category: string
+          created_at?: string
+          id?: string
+          item_name: string
+        }
+        Update: {
+          brand?: string | null
+          category?: string
+          created_at?: string
+          id?: string
+          item_name?: string
+        }
+        Relationships: []
+      }
       mokdae_store: {
         Row: {
           case_id: string
