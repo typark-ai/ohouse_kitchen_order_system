@@ -11,7 +11,15 @@
       theme: {
         extend: {
           fontFamily: { sans: ["'Pretendard Variable'", "Pretendard", "Inter", "sans-serif"] },
-          colors: { brand: '#00A1FF', 'brand-weak': '#F0F8FC' },
+          colors: {
+            brand: '#00A1FF', 'brand-weak': '#F0F8FC',
+            'genuine-blue': { 50:'#F0F8FC',100:'#D9EFFF',200:'#9ED7FF',300:'#5EBFFF',400:'#00A1FF',500:'#0A78C0' },
+            success: { DEFAULT:'#16a34a', weak:'#f0fdf4', foreground:'#15803d' },
+            warning: { DEFAULT:'#fbbf24', weak:'#fffbeb', foreground:'#b45309' },
+            destructive: { DEFAULT:'#dc2626', weak:'#fef2f2', foreground:'#fef2f2' },
+            muted: { DEFAULT:'#f3f4f6', foreground:'#6b7280' },
+          },
+          borderRadius: { '2xl':'1rem', '3xl':'1.25rem' },
         },
       },
     };
@@ -20,7 +28,13 @@
   <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
   <style>
-    body { font-family: 'Pretendard Variable', 'Pretendard', 'Inter', sans-serif; background: #F1F5F9; margin: 0; }
+    body { font-family: 'Pretendard Variable', 'Pretendard', 'Inter', sans-serif; -webkit-font-smoothing: antialiased; letter-spacing: -0.3px; word-break: keep-all; background: #F1F5F9; margin: 0; }
+    .body-xs  { font-size: 0.625rem; line-height: 1.375; font-weight: 400; }
+    .body-sm  { font-size: 0.75rem;  line-height: 1.375; font-weight: 400; }
+    .body-md  { font-size: 0.875rem; line-height: 1.375; font-weight: 400; }
+    .heading-xs { font-size: 0.875rem; line-height: 1.25; font-weight: 600; }
+    .heading-sm { font-size: 0.875rem; line-height: 1.25; font-weight: 600; }
+    .heading-md { font-size: 1.125rem; line-height: 1.25; font-weight: 600; }
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: #F1F5F9; }
     ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
@@ -175,32 +189,32 @@ function Sidebar({ cases, activeCaseId, sidebarTab, onTabChange, onSelect }) {
   return (
     <aside className="w-64 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col h-full overflow-hidden">
       {/* 로고 */}
-      <div className="px-4 py-4 border-b border-gray-100 flex-shrink-0">
+      <div className="px-4 py-4 border-b border-gray-200 flex-shrink-0">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 bg-violet-700 rounded-xl flex items-center justify-center">
+          <div className="w-8 h-8 bg-brand rounded-xl flex items-center justify-center">
             <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/>
             </svg>
           </div>
           <div>
-            <p className="text-xs font-black text-gray-800 leading-tight">기기 업체 포털</p>
-            <p className="text-xs text-gray-400">Appliance B2B</p>
+            <p className="heading-xs text-gray-900 leading-tight">기기 업체 포털</p>
+            <p className="body-xs text-muted-foreground">Appliance B2B</p>
           </div>
         </div>
       </div>
 
       {/* 탭 */}
-      <div className="px-3 py-2 border-b border-gray-100 flex gap-1 flex-shrink-0">
+      <div className="px-3 py-2 border-b border-gray-200 flex gap-1 flex-shrink-0">
         <button onClick={() => onTabChange('active')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${sidebarTab==='active' ? 'bg-brand text-white shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}>
+          className={`flex-1 py-1.5 rounded-lg body-sm font-bold transition-all ${sidebarTab==='active' ? 'bg-brand text-white shadow-sm' : 'text-muted-foreground hover:bg-gray-50'}`}>
           발주 요청 <span className="opacity-75">({active.length})</span>
         </button>
         <button onClick={() => onTabChange('archive')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${sidebarTab==='archive' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}>
+          className={`flex-1 py-1.5 rounded-lg body-sm font-bold transition-all ${sidebarTab==='archive' ? 'bg-gray-700 text-white shadow-sm' : 'text-muted-foreground hover:bg-gray-50'}`}>
           아카이브 <span className="opacity-75">({archive.length})</span>
         </button>
         <button onClick={() => onTabChange('cancelled')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${sidebarTab==='cancelled' ? 'bg-red-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}>
+          className={`flex-1 py-1.5 rounded-lg body-sm font-bold transition-all ${sidebarTab==='cancelled' ? 'bg-red-600 text-white shadow-sm' : 'text-muted-foreground hover:bg-gray-50'}`}>
           취소 {cancelled.length > 0 && <span className="opacity-75">({cancelled.length})</span>}
         </button>
       </div>
@@ -320,23 +334,23 @@ function DetailView({ caseData, onApprove, onReject, onToast }) {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* 현장 헤더 */}
-      <div className="bg-gray-900 text-white px-6 py-4 flex-shrink-0">
+      <div className="bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-xs font-mono text-gray-400">{caseData.id}</span>
-              <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${getCaseBadgeCls(caseData.status?.gigi)}`}>
+              <span className="body-sm font-mono text-muted-foreground">{caseData.id}</span>
+              <span className={`body-sm font-bold px-2 py-0.5 rounded-full border ${getCaseBadgeCls(caseData.status?.gigi)}`}>
                 {caseData.status?.gigi || '-'}
               </span>
             </div>
-            <h1 className="text-lg font-black leading-snug">{caseData.customer} 고객 현장</h1>
-            <p className="text-sm text-gray-300 mt-0.5 leading-snug">{caseData.address}</p>
+            <h1 className="heading-md text-gray-900 leading-snug">{caseData.customer} 고객 현장</h1>
+            <p className="body-md text-muted-foreground mt-0.5 leading-snug">{caseData.address}</p>
           </div>
           <div className="text-right flex-shrink-0">
-            <p className="text-[11px] text-gray-400 uppercase tracking-wide">희망 납기</p>
-            <p className="text-sm font-bold">{order?.requestedDate || '-'}</p>
-            <p className="text-[11px] text-gray-400 uppercase tracking-wide mt-2">담당자</p>
-            <p className="text-sm font-semibold text-gray-200">{caseData.manager}</p>
+            <p className="body-xs text-muted-foreground uppercase tracking-wide">희망 납기</p>
+            <p className="body-md font-bold text-gray-900">{order?.requestedDate || '-'}</p>
+            <p className="body-xs text-muted-foreground uppercase tracking-wide mt-2">담당자</p>
+            <p className="body-md font-semibold text-gray-700">{caseData.manager}</p>
           </div>
         </div>
       </div>

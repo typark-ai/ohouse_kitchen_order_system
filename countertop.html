@@ -11,7 +11,15 @@
       theme: {
         extend: {
           fontFamily: { sans: ["'Pretendard Variable'", "Pretendard", "Inter", "sans-serif"] },
-          colors: { brand: '#00A1FF', 'brand-weak': '#F0F8FC' },
+          colors: {
+            brand: '#00A1FF', 'brand-weak': '#F0F8FC',
+            'genuine-blue': { 50:'#F0F8FC',100:'#D9EFFF',200:'#9ED7FF',300:'#5EBFFF',400:'#00A1FF',500:'#0A78C0' },
+            success: { DEFAULT:'#16a34a', weak:'#f0fdf4', foreground:'#15803d' },
+            warning: { DEFAULT:'#fbbf24', weak:'#fffbeb', foreground:'#b45309' },
+            destructive: { DEFAULT:'#dc2626', weak:'#fef2f2', foreground:'#fef2f2' },
+            muted: { DEFAULT:'#f3f4f6', foreground:'#6b7280' },
+          },
+          borderRadius: { '2xl':'1rem', '3xl':'1.25rem' },
         },
       },
     };
@@ -20,7 +28,13 @@
   <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
   <style>
-    body { font-family: 'Pretendard Variable', 'Pretendard', 'Inter', sans-serif; background: #F9FAFB; margin: 0; }
+    body { font-family: 'Pretendard Variable', 'Pretendard', 'Inter', sans-serif; -webkit-font-smoothing: antialiased; letter-spacing: -0.3px; word-break: keep-all; background: #F9FAFB; margin: 0; }
+    .body-xs  { font-size: 0.625rem; line-height: 1.375; font-weight: 400; }
+    .body-sm  { font-size: 0.75rem;  line-height: 1.375; font-weight: 400; }
+    .body-md  { font-size: 0.875rem; line-height: 1.375; font-weight: 400; }
+    .heading-xs { font-size: 0.875rem; line-height: 1.25; font-weight: 600; }
+    .heading-sm { font-size: 0.875rem; line-height: 1.25; font-weight: 600; }
+    .heading-md { font-size: 1.125rem; line-height: 1.25; font-weight: 600; }
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #F3F4F6; }
     ::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 3px; }
@@ -254,10 +268,10 @@ function ListPage({ cases, onSelect, onArchive, onRestore, onToast }) {
 
   /* 테이블 컬럼 정의 */
   const colGroups = [
-    { label: "",         span: 1, cls: "bg-gray-900 border-r border-gray-700" },
-    { label: "기본 정보", span: 3, cls: "bg-gray-800" },
-    { label: "일정",      span: 1, cls: "bg-brand" },
-    { label: "공장 상태", span: 1, cls: "bg-gray-700" },
+    { label: "",         span: 1, cls: "bg-gray-50 border-r border-gray-200" },
+    { label: "기본 정보", span: 3, cls: "bg-gray-50" },
+    { label: "일정",      span: 1, cls: "bg-brand-weak" },
+    { label: "공장 상태", span: 1, cls: "bg-gray-50" },
   ];
   const cols = [
     { label: "",               w: "w-10"  },
@@ -272,21 +286,21 @@ function ListPage({ cases, onSelect, onArchive, onRestore, onToast }) {
     <div className="min-h-screen bg-[#F9FAFB] flex flex-col">
 
       {/* ── 헤더 ── */}
-      <header className="bg-gray-900 text-white px-6 h-14 flex items-center justify-between border-b border-gray-800 flex-shrink-0">
+      <header className="bg-white text-gray-900 px-6 h-14 flex items-center justify-between border-b border-gray-200 flex-shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center">
-            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="w-8 h-8 bg-gray-900 rounded-xl flex items-center justify-center">
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
             </svg>
           </div>
           <div>
-            <h1 className="text-sm font-semibold tracking-tight">상판 공장 포털</h1>
-            <p className="text-gray-400 text-xs">Countertop B2B · 발주 관리</p>
+            <h1 className="heading-sm text-gray-900">상판 공장 포털</h1>
+            <p className="body-xs text-muted-foreground">Countertop B2B · 발주 관리</p>
           </div>
         </div>
-        <div className="flex items-center gap-3 text-sm">
-          <div className="text-gray-400 text-xs hidden sm:block">
-            오늘 <span className="text-white font-medium">{TODAY_STR}</span>
+        <div className="flex items-center gap-3">
+          <div className="body-sm text-muted-foreground hidden sm:block">
+            오늘 <span className="text-gray-900 font-semibold">{TODAY_STR}</span>
           </div>
         </div>
       </header>
@@ -294,25 +308,25 @@ function ListPage({ cases, onSelect, onArchive, onRestore, onToast }) {
       {/* ── 메인 컨텐츠 ── */}
       <div className="flex-1 flex flex-col px-6 py-5 gap-4">
 
-        {/* ── 탭 ── */}
+        {/* ── 탭 — 언더라인 스타일 ── */}
         <div className="flex items-center">
-          <div className="flex items-center bg-white border border-gray-200 rounded-xl p-1 gap-1 shadow-sm">
+          <div className="flex items-center gap-1 border-b border-gray-200">
             <button onClick={() => handleTabChange("active")}
-              className={`flex items-center gap-2 px-4 h-9 rounded-lg text-sm font-semibold transition-all ${
-                tab === "active" ? "bg-gray-900 text-white shadow-sm" : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+              className={`flex items-center gap-2 px-4 h-10 body-md font-semibold transition-all border-b-2 -mb-px ${
+                tab === "active" ? "border-brand text-brand" : "border-transparent text-muted-foreground hover:text-gray-800"
               }`}>
               진행 중
-              <span className={`text-xs px-2 py-0.5 rounded-full font-bold transition-colors ${
-                tab === "active" ? "bg-brand text-white" : "bg-gray-100 text-gray-500"
+              <span className={`body-sm px-2 py-0.5 rounded-full font-bold transition-colors ${
+                tab === "active" ? "bg-brand text-white" : "bg-gray-100 text-muted-foreground"
               }`}>{activeCount}</span>
             </button>
             <button onClick={() => handleTabChange("archived")}
-              className={`flex items-center gap-2 px-4 h-9 rounded-lg text-sm font-semibold transition-all ${
-                tab === "archived" ? "bg-gray-900 text-white shadow-sm" : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+              className={`flex items-center gap-2 px-4 h-10 body-md font-semibold transition-all border-b-2 -mb-px ${
+                tab === "archived" ? "border-brand text-brand" : "border-transparent text-muted-foreground hover:text-gray-800"
               }`}>
               아카이브
-              <span className={`text-xs px-2 py-0.5 rounded-full font-bold transition-colors ${
-                tab === "archived" ? "bg-gray-600 text-white" : "bg-gray-100 text-gray-500"
+              <span className={`body-sm px-2 py-0.5 rounded-full font-bold transition-colors ${
+                tab === "archived" ? "bg-gray-600 text-white" : "bg-gray-100 text-muted-foreground"
               }`}>{archiveCount}</span>
             </button>
           </div>
@@ -392,16 +406,16 @@ function ListPage({ cases, onSelect, onArchive, onRestore, onToast }) {
                 <tr>
                   {colGroups.map((g, i) => (
                     <th key={i} colSpan={g.span}
-                      className={`${g.cls} text-white text-center py-2 text-xs font-medium tracking-wider ${i < colGroups.length - 1 ? "border-r border-white/10" : ""}`}>
+                      className={`${g.cls} text-gray-500 text-center py-2 body-xs font-semibold tracking-wider uppercase ${i < colGroups.length - 1 ? "border-r border-gray-200" : ""}`}>
                       {g.label}
                     </th>
                   ))}
                 </tr>
                 {/* 컬럼 헤더 행 */}
-                <tr className="bg-gray-900 text-gray-300 text-xs">
+                <tr className="bg-gray-50 text-gray-600 body-sm border-b border-gray-200">
                   {cols.map((col, i) => (
                     <th key={i}
-                      className={`${col.w} py-2 px-3 text-center font-medium whitespace-pre-line ${i < cols.length - 1 ? "border-r border-gray-700" : ""}`}>
+                      className={`${col.w} py-2.5 px-3 text-center font-semibold whitespace-pre-line ${i < cols.length - 1 ? "border-r border-gray-200" : ""}`}>
                       {i === 0 ? (
                         <div className="flex items-center justify-center">
                           <input ref={headerCbRef} type="checkbox" className="cb-custom"

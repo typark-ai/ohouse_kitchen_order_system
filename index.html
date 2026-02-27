@@ -16,7 +16,14 @@
           colors: {
             brand: '#00A1FF',
             'brand-weak': '#F0F8FC',
+            'genuine-blue': { 50:'#F0F8FC',100:'#D9EFFF',200:'#9ED7FF',300:'#5EBFFF',400:'#00A1FF',500:'#0A78C0',600:'#095890',700:'#064470',800:'#072B47',900:'#06192B' },
+            success: { DEFAULT:'#16a34a', weak:'#f0fdf4', foreground:'#15803d' },
+            warning: { DEFAULT:'#fbbf24', weak:'#fffbeb', foreground:'#b45309' },
+            destructive: { DEFAULT:'#dc2626', weak:'#fef2f2', foreground:'#fef2f2' },
+            muted: { DEFAULT:'#f3f4f6', foreground:'#6b7280' },
+            accent: { DEFAULT:'#f3f4f6', foreground:'#111827' },
           },
+          borderRadius: { '2xl':'1rem', '3xl':'1.25rem' },
         },
       },
     };
@@ -26,11 +33,22 @@
   <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
   <style>
-    body { font-family: 'Pretendard Variable', 'Pretendard', 'Inter', sans-serif; }
+    body { font-family: 'Pretendard Variable', 'Pretendard', 'Inter', sans-serif; -webkit-font-smoothing: antialiased; letter-spacing: -0.3px; word-break: keep-all; }
     ::-webkit-scrollbar { height: 6px; width: 6px; }
     ::-webkit-scrollbar-track { background: #F3F4F6; }
     ::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #9CA3AF; }
+
+    /* Typography classes */
+    .body-xs  { font-size: 0.625rem; line-height: 1.375; font-weight: 400; }
+    .body-sm  { font-size: 0.75rem;  line-height: 1.375; font-weight: 400; }
+    .body-md  { font-size: 0.875rem; line-height: 1.375; font-weight: 400; }
+    .body-lg  { font-size: 1rem;     line-height: 1.375; font-weight: 400; }
+    .heading-xs { font-size: 0.875rem; line-height: 1.25; font-weight: 600; }
+    .heading-sm { font-size: 0.875rem; line-height: 1.25; font-weight: 600; }
+    .heading-md { font-size: 1.125rem; line-height: 1.25; font-weight: 600; }
+    .heading-lg { font-size: 1.25rem;  line-height: 1.25; font-weight: 600; }
+    .heading-xl { font-size: 1.5rem;   line-height: 1.25; font-weight: 600; }
 
     /* 체크박스 커스텀 */
     .cb-custom {
@@ -41,12 +59,12 @@
       background: #fff;
       cursor: pointer;
       position: relative;
-      transition: all 0.1s;
+      transition: all 0.15s;
       flex-shrink: 0;
     }
     .cb-custom:checked {
-      background: #00A1FF;
-      border-color: #00A1FF;
+      background: #111827;
+      border-color: #111827;
     }
     .cb-custom:checked::after {
       content: '';
@@ -58,8 +76,8 @@
       transform: rotate(45deg);
     }
     .cb-custom:indeterminate {
-      background: #00A1FF;
-      border-color: #00A1FF;
+      background: #111827;
+      border-color: #111827;
     }
     .cb-custom:indeterminate::after {
       content: '';
@@ -69,7 +87,32 @@
       background: #fff;
       border-radius: 1px;
     }
-    .cb-custom:hover:not(:checked) { border-color: #00A1FF; }
+    .cb-custom:hover:not(:checked) { border-color: #111827; }
+
+    /* Button transitions */
+    .btn-primary { 
+      background: #00A1FF; color: #fff; font-weight: 600;
+      transition: all 0.15s;
+    }
+    .btn-primary:hover { background: #0A78C0; }
+    .btn-primary:active { transform: scale(0.97); }
+    .btn-primary:disabled { background: #e5e7eb; color: #9ca3af; cursor: not-allowed; transform: none; }
+    
+    .btn-outline {
+      background: #fff; border: 1px solid #e5e7eb; color: #374151; font-weight: 600;
+      transition: all 0.15s;
+    }
+    .btn-outline:hover { background: #f9fafb; border-color: #d1d5db; }
+    .btn-outline:active { transform: scale(0.97); }
+
+    .btn-destructive {
+      background: #dc2626; color: #fff; font-weight: 600;
+      transition: all 0.15s;
+    }
+    .btn-destructive:hover { background: #b91c1c; }
+    .btn-destructive:active { transform: scale(0.97); }
+
+    @keyframes fadeIn { 0% { opacity:0; transform:translateY(6px); } 100% { opacity:1; transform:translateY(0); } }
   </style>
 </head>
 <body class="bg-[#F9FAFB] min-h-screen">
@@ -122,34 +165,34 @@ function isUrgentDate(dateStr) {
 }
 
 function getBadgeStyle(text) {
-  if (!text) return "bg-gray-100 text-gray-500";
+  if (!text) return "bg-gray-100 text-muted-foreground";
   const t = text.toLowerCase();
 
   if (
     t.includes("반려") || t.includes("수정요청") || t.includes("수정 요청") ||
     t.includes("긴급") || t.includes("재마감요청") || t.includes("재마감 요청")
-  ) return "bg-red-50 text-red-700 border border-red-200 font-semibold";
+  ) return "bg-destructive-weak text-red-700 border border-red-200 font-semibold";
 
   if (t.includes("조정") && !t.includes("긴급"))
     return "bg-orange-50 text-orange-700 border border-orange-200 font-semibold";
 
   if (t.includes("확정") || t.includes("완료") || t.includes("확인"))
-    return "bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold";
+    return "bg-success-weak text-success-foreground border border-green-200 font-semibold";
 
   if (t.includes("제작진행"))
     return "bg-teal-50 text-teal-700 border border-teal-200 font-semibold";
 
   if (t.includes("진행") || t.includes("검토"))
-    return "bg-brand-weak text-brand border border-brand/20";
+    return "bg-brand-weak text-brand border border-brand/20 font-medium";
 
   if (t.includes("예정") || t.includes("완료대기"))
-    return "bg-brand-weak text-brand border border-brand/20";
+    return "bg-brand-weak text-brand border border-brand/20 font-medium";
 
   if (t.includes("대기") || t.includes("미배정"))
-    return "bg-gray-100 text-gray-500 border border-gray-200";
+    return "bg-gray-100 text-muted-foreground border border-gray-200";
 
   if (t.includes("조율"))
-    return "bg-yellow-50 text-yellow-700 border border-yellow-200";
+    return "bg-warning-weak text-warning-foreground border border-amber-200 font-medium";
 
   return "bg-gray-100 text-gray-600 border border-gray-200";
 }
@@ -424,10 +467,10 @@ function OrderTable({ data, selectedIds, onToggleSelect, onToggleAll }) {
   }, [someSelected]);
 
   const colGroups = [
-    { label: "",         span: 1, cls: "bg-gray-900 border-r border-gray-700" },
-    { label: "기본 정보", span: 5, cls: "bg-gray-800" },
-    { label: "일정",      span: 4, cls: "bg-brand" },
-    { label: "진행 상태", span: 4, cls: "bg-gray-700" },
+    { label: "",         span: 1, cls: "bg-gray-50 border-r border-gray-200" },
+    { label: "기본 정보", span: 5, cls: "bg-gray-50" },
+    { label: "일정",      span: 4, cls: "bg-brand-weak" },
+    { label: "진행 상태", span: 4, cls: "bg-gray-50" },
   ];
 
   const cols = [
@@ -455,16 +498,16 @@ function OrderTable({ data, selectedIds, onToggleSelect, onToggleAll }) {
           <tr>
             {colGroups.map((g, i) => (
               <th key={i} colSpan={g.span}
-                className={`${g.cls} text-white text-center py-2 text-xs font-medium tracking-wider ${i < colGroups.length - 1 ? "border-r border-white/10" : ""}`}>
+                className={`${g.cls} text-gray-500 text-center py-2 body-xs font-semibold tracking-wider uppercase ${i < colGroups.length - 1 ? "border-r border-gray-200" : ""}`}>
                 {g.label}
               </th>
             ))}
           </tr>
           {/* 컬럼 헤더 행 */}
-          <tr className="bg-gray-900 text-gray-300 text-xs">
+          <tr className="bg-gray-50 text-gray-600 body-sm border-b border-gray-200">
             {cols.map((col, i) => (
               <th key={i}
-                className={`${col.w} py-2 px-3 text-center font-medium whitespace-pre-line ${i < cols.length - 1 ? "border-r border-gray-700" : ""}`}>
+                className={`${col.w} py-2.5 px-3 text-center font-semibold whitespace-pre-line ${i < cols.length - 1 ? "border-r border-gray-200" : ""}`}>
                 {i === 0 ? (
                   <div className="flex items-center justify-center">
                     <input
@@ -498,8 +541,8 @@ function OrderTable({ data, selectedIds, onToggleSelect, onToggleAll }) {
           {data.map((row, idx) => {
             const isSelected = selectedIds.includes(row.id);
             const isHovered  = hoveredRow === row.id;
-            const base = idx % 2 === 0 ? "bg-white" : "bg-gray-50/70";
-            const rowBg = isSelected ? "bg-brand-weak" : isHovered ? "bg-brand-weak/50" : base;
+            const base = idx % 2 === 0 ? "bg-white" : "bg-[#FAFBFC]";
+            const rowBg = isSelected ? "bg-genuine-blue-50" : isHovered ? "bg-gray-50" : base;
 
             return (
               <tr
@@ -749,32 +792,32 @@ function App() {
     <div className="min-h-screen bg-[#F9FAFB] flex flex-col">
 
       {/* ── 헤더 ── */}
-      <header className="bg-gray-900 text-white px-6 h-14 flex items-center justify-between border-b border-gray-800 flex-shrink-0">
+      <header className="bg-white text-gray-900 px-6 h-14 flex items-center justify-between border-b border-gray-200 flex-shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-brand rounded-lg flex items-center justify-center">
-            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-8 h-8 bg-brand rounded-xl flex items-center justify-center">
+            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                 d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
           </div>
           <div>
-            <h1 className="text-sm font-semibold tracking-tight">직시공 발주 관리 시스템</h1>
-            <p className="text-gray-400 text-xs">Interior Direct Construction Order Management</p>
+            <h1 className="heading-sm text-gray-900">직시공 발주 관리</h1>
+            <p className="body-xs text-muted-foreground">Interior Direct Construction</p>
           </div>
         </div>
-        <div className="flex items-center gap-3 text-sm">
+        <div className="flex items-center gap-3">
           {urgentCount > 0 && (
-            <div className="flex items-center gap-1 bg-red-500/20 border border-red-500/30 text-red-400 px-3 h-7 rounded-full text-xs font-medium">
-              <span className="w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse"></span>
+            <div className="flex items-center gap-1.5 bg-destructive-weak border border-red-200 text-red-700 px-3 h-7 rounded-full body-sm font-medium">
+              <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span>
               임박 일정 {urgentCount}건
             </div>
           )}
-          <div className="text-gray-400 text-xs hidden sm:block">
-            오늘 <span className="text-white font-medium">{TODAY_STR}</span>
+          <div className="body-sm text-muted-foreground hidden sm:block">
+            오늘 <span className="text-gray-900 font-semibold">{TODAY_STR}</span>
           </div>
-          <div className="w-px h-4 bg-gray-700"></div>
+          <div className="w-px h-4 bg-gray-200"></div>
           <button onClick={() => setDbModalOpen(true)}
-            className="flex items-center gap-2 px-3 h-8 rounded-lg text-xs font-medium border border-gray-700 text-gray-300 hover:text-white hover:border-gray-500 transition-colors">
+            className="btn-outline flex items-center gap-2 px-3 h-8 rounded-lg body-sm">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7M9 11l3 3 3-3M12 14V3" />
             </svg>
@@ -796,50 +839,50 @@ function App() {
 
         {/* ── 탭 + 현장 추가 버튼 ── */}
         <div className="flex items-center justify-between">
-          {/* 탭 */}
-          <div className="flex items-center bg-white border border-gray-200 rounded-xl p-1 gap-1 shadow-sm">
+          {/* 탭 — 언더라인 스타일 */}
+          <div className="flex items-center gap-1 border-b border-gray-200">
             <button
               onClick={() => handleTabChange("active")}
-              className={`flex items-center gap-2 px-4 h-9 rounded-lg text-sm font-semibold transition-all ${
+              className={`flex items-center gap-2 px-4 h-10 body-md font-semibold transition-all border-b-2 -mb-px ${
                 tab === "active"
-                  ? "bg-gray-900 text-white shadow-sm"
-                  : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+                  ? "border-brand text-brand"
+                  : "border-transparent text-muted-foreground hover:text-gray-800"
               }`}
             >
               진행 중
-              <span className={`text-xs px-2 py-0.5 rounded-full font-bold transition-colors ${
-                tab === "active" ? "bg-brand text-white" : "bg-gray-100 text-gray-500"
+              <span className={`body-sm px-2 py-0.5 rounded-full font-bold transition-colors ${
+                tab === "active" ? "bg-brand text-white" : "bg-gray-100 text-muted-foreground"
               }`}>
                 {activeCount}
               </span>
             </button>
             <button
               onClick={() => handleTabChange("archived")}
-              className={`flex items-center gap-2 px-4 h-9 rounded-lg text-sm font-semibold transition-all ${
+              className={`flex items-center gap-2 px-4 h-10 body-md font-semibold transition-all border-b-2 -mb-px ${
                 tab === "archived"
-                  ? "bg-gray-900 text-white shadow-sm"
-                  : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+                  ? "border-brand text-brand"
+                  : "border-transparent text-muted-foreground hover:text-gray-800"
               }`}
             >
               아카이빙(완료)
-              <span className={`text-xs px-2 py-0.5 rounded-full font-bold transition-colors ${
-                tab === "archived" ? "bg-gray-600 text-white" : "bg-gray-100 text-gray-500"
+              <span className={`body-sm px-2 py-0.5 rounded-full font-bold transition-colors ${
+                tab === "archived" ? "bg-gray-600 text-white" : "bg-gray-100 text-muted-foreground"
               }`}>
                 {archivedCount}
               </span>
             </button>
             <button
               onClick={() => handleTabChange("cancelled")}
-              className={`flex items-center gap-2 px-4 h-9 rounded-lg text-sm font-semibold transition-all ${
+              className={`flex items-center gap-2 px-4 h-10 body-md font-semibold transition-all border-b-2 -mb-px ${
                 tab === "cancelled"
-                  ? "bg-red-600 text-white shadow-sm"
-                  : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+                  ? "border-red-500 text-red-600"
+                  : "border-transparent text-muted-foreground hover:text-gray-800"
               }`}
             >
               취소됨
               {cancelledCount > 0 && (
-                <span className={`text-xs px-2 py-0.5 rounded-full font-bold transition-colors ${
-                  tab === "cancelled" ? "bg-red-800 text-white" : "bg-red-50 text-red-500 border border-red-200"
+                <span className={`body-sm px-2 py-0.5 rounded-full font-bold transition-colors ${
+                  tab === "cancelled" ? "bg-destructive-weak text-red-600" : "bg-gray-100 text-muted-foreground"
                 }`}>
                   {cancelledCount}
                 </span>
@@ -853,7 +896,7 @@ function App() {
               sessionStorage.removeItem('CURRENT_CASE_ID');
               window.location.href = 'detail.html?new=1';
             }}
-            className="flex items-center gap-2 px-5 h-10 rounded-xl text-sm font-semibold bg-brand hover:bg-[#0090e6] text-white shadow-sm transition-all active:scale-[0.97]"
+            className="btn-primary flex items-center gap-2 px-5 h-10 rounded-lg body-md"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
@@ -863,29 +906,29 @@ function App() {
         </div>
 
         {/* ── 테이블 컨테이너 ── */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
 
           {/* 테이블 헤더 바 */}
           <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="font-semibold text-gray-900 text-sm">
+                <h2 className="heading-sm text-gray-900">
                   {tab === "active" ? "진행 중 현장 목록" : tab === "archived" ? "아카이빙(완료) 현장 목록" : "취소된 현장 목록"}
                 </h2>
                 {tab === "archived" && (
-                  <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-medium">완료 처리된 현장</span>
+                  <span className="body-sm bg-gray-100 text-muted-foreground px-2 py-0.5 rounded-full font-medium">완료 처리된 현장</span>
                 )}
                 {tab === "cancelled" && (
-                  <span className="text-xs bg-red-50 text-red-500 border border-red-200 px-2 py-0.5 rounded-full font-medium">취소 처리된 현장</span>
+                  <span className="body-sm bg-destructive-weak text-red-600 border border-red-200 px-2 py-0.5 rounded-full font-medium">취소 처리된 현장</span>
                 )}
               </div>
-              <p className="text-xs text-gray-400 mt-1">
-                총 <span className="font-medium text-gray-700">{filtered.length}</span>건
+              <p className="body-sm text-muted-foreground mt-1">
+                총 <span className="font-semibold text-gray-700">{filtered.length}</span>건
                 {filtered.length !== tabData.length && ` (전체 ${tabData.length}건 중 필터)`}
                 &nbsp;·&nbsp;행 클릭 시 상세 페이지로 이동해요
               </p>
             </div>
-            <button className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 border border-gray-200 rounded-lg px-3 h-8 transition-colors hover:bg-gray-50 flex-shrink-0">
+            <button className="btn-outline flex items-center gap-1.5 body-sm px-3 h-8 rounded-lg flex-shrink-0">
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
@@ -988,7 +1031,7 @@ function App() {
           />
 
           {/* 하단 푸터 */}
-          <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 flex items-center justify-between text-xs text-gray-400">
+          <div className="px-4 py-2.5 bg-[#FAFBFC] border-t border-gray-200 flex items-center justify-between body-sm text-muted-foreground">
             <span>마지막 업데이트: {TODAY_STR}</span>
             <span>행 클릭 시 상세 페이지로 이동 · 상태 뱃지는 읽기 전용</span>
           </div>
