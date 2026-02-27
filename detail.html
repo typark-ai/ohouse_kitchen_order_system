@@ -150,6 +150,57 @@ function persistItem(updated) {
 const SUPABASE_URL = "https://ykifurzrrbjrgjrznimk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlraWZ1cnpycmJqcmdqcnpuaW1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMjE3NTcsImV4cCI6MjA4NzY5Nzc1N30.BVTlrG_Q_cXqj6qOa_rZPXrCs7MhwuR9o8koncGoUU0";
 const SB_HEADERS = { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" };
+const STORAGE_BUCKET = "case-files";
+
+/* ── Storage 업로드 유틸 ── */
+async function uploadFileToStorage(file, caseId, section) {
+  const timestamp = Date.now();
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const storagePath = `${caseId}/${section}/${timestamp}_${safeName}`;
+  
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${STORAGE_BUCKET}/${storagePath}`, {
+    method: "POST",
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": file.type || "application/octet-stream",
+      "x-upsert": "true",
+    },
+    body: file,
+  });
+  
+  if (!res.ok) {
+    console.error("Storage upload failed:", await res.text());
+    return null;
+  }
+  
+  // Public URL for the file
+  const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${storagePath}`;
+  return { storagePath, publicUrl };
+}
+
+/* ── 이미지 리사이즈 후 Blob 변환 ── */
+function resizeImageToBlob(file, maxSize = 900) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxSize || height > maxSize) {
+          if (width >= height) { height = Math.round(height * maxSize / width); width = maxSize; }
+          else { width = Math.round(width * maxSize / height); height = maxSize; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.75);
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 function caseToDbRow(c) {
   return {
@@ -1543,44 +1594,47 @@ function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast
     setUrgentConfirmOpen(false);
   };
 
-  /* ── 파일 업로드 (canvas 리사이즈 → dataURL → localStorage 영속화) ── */
+  /* ── 파일 업로드 (Storage 업로드) ── */
   const handleDragOver  = (e) => { e.preventDefault(); setDragging(true); };
   const handleDragLeave = (e) => { e.preventDefault(); setDragging(false); };
   const handleDrop = (e) => { e.preventDefault(); setDragging(false); handleAddFiles(Array.from(e.dataTransfer.files)); };
   const handleFileInputChange = (e) => { handleAddFiles(Array.from(e.target.files)); e.target.value = ""; };
+  const [uploading, setUploading] = useState(false);
   const handleAddFiles = async (fileList) => {
     if (!fileList.length) return;
-    const toStorable = (f) => new Promise((resolve) => {
-      const sizeStr = f.size > 1024 * 1024 ? `${(f.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(f.size / 1024)} KB`;
-      if (!f.type.startsWith("image/")) {
-        resolve({ id: Date.now() + Math.random(), name: f.name, size: sizeStr, url: null, isImage: false });
-        return;
+    const caseId = getCaseId();
+    if (!caseId) { onToast({ type: "warning", message: "케이스 ID를 찾을 수 없습니다." }); return; }
+    setUploading(true);
+    try {
+      const results = [];
+      for (const f of fileList) {
+        const sizeStr = f.size > 1024 * 1024 ? `${(f.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(f.size / 1024)} KB`;
+        const isImage = f.type.startsWith("image/");
+        let uploadFile = f;
+        if (isImage) {
+          const resizedBlob = await resizeImageToBlob(f);
+          if (resizedBlob) uploadFile = new File([resizedBlob], f.name, { type: "image/jpeg" });
+        }
+        const uploaded = await uploadFileToStorage(uploadFile, caseId, "mokdae");
+        if (uploaded) {
+          results.push({ id: Date.now() + Math.random(), name: f.name, size: sizeStr, url: uploaded.publicUrl, storagePath: uploaded.storagePath, isImage });
+        } else {
+          results.push({ id: Date.now() + Math.random(), name: f.name, size: sizeStr, url: null, isImage: false, uploadFailed: true });
+        }
       }
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const img = new Image();
-        img.onload = () => {
-          const MAX = 900;
-          let { width, height } = img;
-          if (width > MAX || height > MAX) {
-            if (width >= height) { height = Math.round(height * MAX / width); width = MAX; }
-            else                 { width  = Math.round(width  * MAX / height); height = MAX; }
-          }
-          const canvas = document.createElement("canvas");
-          canvas.width = width; canvas.height = height;
-          canvas.getContext("2d").drawImage(img, 0, 0, width, height);
-          resolve({
-            id: Date.now() + Math.random(), name: f.name, size: sizeStr,
-            url: canvas.toDataURL("image/jpeg", 0.75), isImage: true,
-          });
-        };
-        img.src = ev.target.result;
-      };
-      reader.readAsDataURL(f);
-    });
-    const newItems = await Promise.all(fileList.map(toStorable));
-    setUploadedFiles(prev => ({ ...prev, [activeVer]: [...(prev[activeVer] || []), ...newItems] }));
-    onToast({ type: "success", title: "파일 추가됨", message: `${fileList.length}개 파일이 목록에 추가되었습니다.` });
+      setUploadedFiles(prev => ({ ...prev, [activeVer]: [...(prev[activeVer] || []), ...results] }));
+      const failCount = results.filter(r => r.uploadFailed).length;
+      if (failCount > 0) {
+        onToast({ type: "warning", title: "일부 업로드 실패", message: `${fileList.length - failCount}개 성공, ${failCount}개 실패` });
+      } else {
+        onToast({ type: "success", title: "파일 추가됨", message: `${fileList.length}개 파일이 업로드되었습니다.` });
+      }
+    } catch (e) {
+      console.error("File upload error:", e);
+      onToast({ type: "warning", message: "파일 업로드 중 오류가 발생했습니다." });
+    } finally {
+      setUploading(false);
+    }
   };
   const handleRemoveFile = (fileId) => {
     setUploadedFiles(prev => ({ ...prev, [activeVer]: (prev[activeVer] || []).filter(f => f.id !== fileId) }));
@@ -3433,44 +3487,47 @@ function SangpanSectionA({ versions: initVersions, activeVer: initActive, onToas
     setUrgentConfirmOpen(false);
   };
 
-  /* ── 파일 업로드 (canvas 리사이즈 → dataURL → localStorage 영속화) ── */
+  /* ── 파일 업로드 (Storage 업로드) ── */
   const handleDragOver  = (e) => { e.preventDefault(); setDragging(true); };
   const handleDragLeave = (e) => { e.preventDefault(); setDragging(false); };
   const handleDrop = (e) => { e.preventDefault(); setDragging(false); handleAddFiles(Array.from(e.dataTransfer.files)); };
   const handleFileInputChange = (e) => { handleAddFiles(Array.from(e.target.files)); e.target.value = ""; };
+  const [uploading, setUploading] = useState(false);
   const handleAddFiles = async (fileList) => {
     if (!fileList.length) return;
-    const toStorable = (f) => new Promise((resolve) => {
-      const sizeStr = f.size > 1024 * 1024 ? `${(f.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(f.size / 1024)} KB`;
-      if (!f.type.startsWith("image/")) {
-        resolve({ id: Date.now() + Math.random(), name: f.name, size: sizeStr, url: null, isImage: false });
-        return;
+    const caseId = getCaseId();
+    if (!caseId) { onToast({ type: "warning", message: "케이스 ID를 찾을 수 없습니다." }); return; }
+    setUploading(true);
+    try {
+      const results = [];
+      for (const f of fileList) {
+        const sizeStr = f.size > 1024 * 1024 ? `${(f.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(f.size / 1024)} KB`;
+        const isImage = f.type.startsWith("image/");
+        let uploadFile = f;
+        if (isImage) {
+          const resizedBlob = await resizeImageToBlob(f);
+          if (resizedBlob) uploadFile = new File([resizedBlob], f.name, { type: "image/jpeg" });
+        }
+        const uploaded = await uploadFileToStorage(uploadFile, caseId, "sangpan");
+        if (uploaded) {
+          results.push({ id: Date.now() + Math.random(), name: f.name, size: sizeStr, url: uploaded.publicUrl, storagePath: uploaded.storagePath, isImage });
+        } else {
+          results.push({ id: Date.now() + Math.random(), name: f.name, size: sizeStr, url: null, isImage: false, uploadFailed: true });
+        }
       }
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const img = new Image();
-        img.onload = () => {
-          const MAX = 900;
-          let { width, height } = img;
-          if (width > MAX || height > MAX) {
-            if (width >= height) { height = Math.round(height * MAX / width); width = MAX; }
-            else                 { width  = Math.round(width  * MAX / height); height = MAX; }
-          }
-          const canvas = document.createElement("canvas");
-          canvas.width = width; canvas.height = height;
-          canvas.getContext("2d").drawImage(img, 0, 0, width, height);
-          resolve({
-            id: Date.now() + Math.random(), name: f.name, size: sizeStr,
-            url: canvas.toDataURL("image/jpeg", 0.75), isImage: true,
-          });
-        };
-        img.src = ev.target.result;
-      };
-      reader.readAsDataURL(f);
-    });
-    const newItems = await Promise.all(fileList.map(toStorable));
-    setUploadedFiles(prev => ({ ...prev, [activeVer]: [...(prev[activeVer] || []), ...newItems] }));
-    onToast({ type: "success", title: "파일 추가됨", message: `${fileList.length}개 파일이 목록에 추가되었습니다.` });
+      setUploadedFiles(prev => ({ ...prev, [activeVer]: [...(prev[activeVer] || []), ...results] }));
+      const failCount = results.filter(r => r.uploadFailed).length;
+      if (failCount > 0) {
+        onToast({ type: "warning", title: "일부 업로드 실패", message: `${fileList.length - failCount}개 성공, ${failCount}개 실패` });
+      } else {
+        onToast({ type: "success", title: "파일 추가됨", message: `${fileList.length}개 파일이 업로드되었습니다.` });
+      }
+    } catch (e) {
+      console.error("File upload error:", e);
+      onToast({ type: "warning", message: "파일 업로드 중 오류가 발생했습니다." });
+    } finally {
+      setUploading(false);
+    }
   };
   const handleRemoveFile = (fileId) => {
     setUploadedFiles(prev => ({ ...prev, [activeVer]: (prev[activeVer] || []).filter(f => f.id !== fileId) }));
