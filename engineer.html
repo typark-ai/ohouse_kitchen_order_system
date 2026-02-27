@@ -1465,15 +1465,10 @@ function App() {
                 </svg>
               </button>
             ) : (
-              <div className="w-8 h-8 bg-gray-900 rounded-xl flex items-center justify-center">
-                <svg className="w-[18px] h-[18px] text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-                </svg>
-              </div>
+              <img src="/images/ohouse-logo.png" alt="오늘의집" className="h-8" />
             )}
             <div>
-              <p className="text-xs text-gray-400 leading-none font-medium">직시공 발주 시스템</p>
+              <p className="text-xs text-gray-400 leading-none font-medium">발주 시스템</p>
               <p className="text-sm font-bold text-gray-900 leading-tight">
                 {selectedSite ? `${selectedSite.customer} 현장` : "내 현장 목록"}
               </p>
