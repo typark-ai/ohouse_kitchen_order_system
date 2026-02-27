@@ -823,10 +823,15 @@ function SectionSchedule({ data, onToast, onScheduleUnlock, onStatusChange, onPr
   /* 날짜 입력 제한: 오늘 이전 불가 */
   const today = new Date().toISOString().slice(0, 10);
 
+  const normalizeHourValue = (timeStr) => {
+    const hh = String(timeStr || "10:00").slice(0, 2).padStart(2, "0");
+    return `${hh}:00`;
+  };
+
   /* ── Step 1: 고객 희망 일정 ── */
   const [proposals, setProposals] = useState(
     data.proposals && data.proposals.length > 0
-      ? data.proposals
+      ? data.proposals.map(p => ({ ...p, time: normalizeHourValue(p.time) }))
       : [{ id: 1, date: "", time: "10:00" }]
   );
   const [sent, setSent] = useState(data.sent || false);
@@ -966,12 +971,17 @@ function SectionSchedule({ data, onToast, onScheduleUnlock, onStatusChange, onPr
                 onChange={e => updateProposal(p.id, "date", e.target.value)}
                 className={`flex-1 px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand text-gray-700 ${finalStatus === "done" ? "bg-gray-50 border-gray-100 cursor-default" : "border-gray-300 bg-white"}`}
               />
-              <input
-                type="time" value={p.time}
+              <select
+                value={normalizeHourValue(p.time)}
                 disabled={finalStatus === "done"}
                 onChange={e => updateProposal(p.id, "time", e.target.value)}
                 className={`w-28 px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand text-gray-700 ${finalStatus === "done" ? "bg-gray-50 border-gray-100 cursor-default" : "border-gray-300 bg-white"}`}
-              />
+              >
+                {Array.from({ length: 24 }).map((_, hour) => {
+                  const value = `${String(hour).padStart(2, "0")}:00`;
+                  return <option key={value} value={value}>{`${String(hour).padStart(2, "0")}시`}</option>;
+                })}
+              </select>
               {proposals.length > 1 && finalStatus !== "done" && (
                 <button onClick={() => removeProposal(p.id)}
                   className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
