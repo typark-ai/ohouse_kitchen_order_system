@@ -102,7 +102,7 @@ function dbRowToCase(r) {
 async function loadAllCasesFromDB() {
   try {
     const [casesRes, gigiRes] = await Promise.all([
-      fetch(`${SUPABASE_URL}/rest/v1/cases?select=*&order=created_at.desc`, {
+      fetch(`${SUPABASE_URL}/rest/v1/cases?select=*&dispatched_gigi=eq.true&order=created_at.desc`, {
         headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
       }),
       fetch(`${SUPABASE_URL}/rest/v1/gigi_store?select=case_id,data`, {
