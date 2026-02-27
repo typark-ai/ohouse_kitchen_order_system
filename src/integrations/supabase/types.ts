@@ -14,7 +14,144 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      cases: {
+        Row: {
+          address: string | null
+          archived: boolean
+          cancelled: boolean
+          created_at: string
+          customer: string | null
+          id: string
+          manager: string | null
+          phone: string | null
+          schedule: Json
+          silcheuk_eng_response: Json | null
+          silcheuk_final_date: string | null
+          silcheuk_final_time: string | null
+          silcheuk_finalized: boolean
+          silcheuk_proposals: Json
+          silcheuk_sent: boolean
+          status: Json
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          archived?: boolean
+          cancelled?: boolean
+          created_at?: string
+          customer?: string | null
+          id: string
+          manager?: string | null
+          phone?: string | null
+          schedule?: Json
+          silcheuk_eng_response?: Json | null
+          silcheuk_final_date?: string | null
+          silcheuk_final_time?: string | null
+          silcheuk_finalized?: boolean
+          silcheuk_proposals?: Json
+          silcheuk_sent?: boolean
+          status?: Json
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          archived?: boolean
+          cancelled?: boolean
+          created_at?: string
+          customer?: string | null
+          id?: string
+          manager?: string | null
+          phone?: string | null
+          schedule?: Json
+          silcheuk_eng_response?: Json | null
+          silcheuk_final_date?: string | null
+          silcheuk_final_time?: string | null
+          silcheuk_finalized?: boolean
+          silcheuk_proposals?: Json
+          silcheuk_sent?: boolean
+          status?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      gigi_store: {
+        Row: {
+          case_id: string
+          data: Json
+          updated_at: string
+        }
+        Insert: {
+          case_id: string
+          data?: Json
+          updated_at?: string
+        }
+        Update: {
+          case_id?: string
+          data?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gigi_store_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: true
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mokdae_store: {
+        Row: {
+          case_id: string
+          data: Json
+          updated_at: string
+        }
+        Insert: {
+          case_id: string
+          data?: Json
+          updated_at?: string
+        }
+        Update: {
+          case_id?: string
+          data?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mokdae_store_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: true
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sangpan_store: {
+        Row: {
+          case_id: string
+          data: Json
+          updated_at: string
+        }
+        Insert: {
+          case_id: string
+          data?: Json
+          updated_at?: string
+        }
+        Update: {
+          case_id?: string
+          data?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sangpan_store_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: true
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
