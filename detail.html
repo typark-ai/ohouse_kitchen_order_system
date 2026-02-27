@@ -2396,39 +2396,15 @@ function MokdaeSectionD({ claims: initClaims, onToast, onClaimsChange }) {
 /* ═══════════════════════════════════════════════════════
    기기 탭 — 자재 DB (Supabase에서 로드, 실패 시 하드코딩 폴백)
 ═══════════════════════════════════════════════════════ */
-const GIGI_DB_FALLBACK = {
-  쿡탑: [
-    "B2B - [린나이] RBR-S2001D 2구 가스쿡탑",
-    "B2B - [린나이] RBR-S3002T 3구 가스쿡탑",
-    "B2B - [트라이애드] TIH-321 2IH+1HL",
-    "B2B - [삼성] NZ64T3706RK 3구 인덕션",
-  ],
-  후드: [
-    "B2B - [하츠] BGC-60(YL) 옐로우",
-    "B2B - [파버] FABER Galileo NG",
-    "B2B - [린나이] RHR-6010W 정속형",
-  ],
-  수전: [
-    "B2B - [대림B&Co] DL-540N 주방 수전",
-    "B2B - [아메리칸스탠다드] 7455 싱글레버",
-  ],
-  싱크볼: [
-    "B2B - [까사미아] CM-800 스테인리스 1조",
-    "B2B - [한샘] SK-280 언더마운트",
-  ],
-  기타: [
-    "B2B - [클라크] 음식물쓰레기 분쇄기 GFC-250",
-    "B2B - [삼성] 빌트인 식기세척기 DW60R9950US",
-  ],
-};
+const GIGI_DB_FALLBACK = {};
 
 const SUPABASE_URL = "https://ykifurzrrbjrgjrznimk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlraWZ1cnpycmJqcmdqcnpuaW1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMjE3NTcsImV4cCI6MjA4NzY5Nzc1N30.BVTlrG_Q_cXqj6qOa_rZPXrCs7MhwuR9o8koncGoUU0";
 
 function useGigiDb() {
-  const [gigiDb, setGigiDb] = useState(GIGI_DB_FALLBACK);
+  const [gigiDb, setGigiDb] = useState({});
   const [loading, setLoading] = useState(true);
-  const [dbSource, setDbSource] = useState("fallback"); // "db" or "fallback"
+  const [dbSource, setDbSource] = useState("empty"); // "db" or "empty"
 
   useEffect(() => {
     (async () => {
@@ -2445,22 +2421,24 @@ function useGigiDb() {
         if (!res.ok) throw new Error("fetch failed");
         const rows = await res.json();
         if (rows.length === 0) {
+          setDbSource("empty");
           setLoading(false);
-          return; // keep fallback
+          return;
         }
         // Group by category
         const grouped = {};
         rows.forEach(r => {
           if (!grouped[r.category]) grouped[r.category] = [];
           const label = r.brand
-            ? `B2B - [${r.brand}] ${r.item_name}`
+            ? `[${r.brand}] ${r.item_name}`
             : r.item_name;
           grouped[r.category].push(label);
         });
         setGigiDb(grouped);
         setDbSource("db");
       } catch (e) {
-        console.warn("자재 DB 로드 실패, 폴백 사용:", e);
+        console.warn("자재 DB 로드 실패:", e);
+        setDbSource("empty");
       }
       setLoading(false);
     })();
@@ -2853,6 +2831,17 @@ function GigiTab({ onToast, onGigiSchedule }) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
           <span>업로드된 자재 DB를 사용하고 있습니다.</span>
+        </div>
+      )}
+      {dbSource === "empty" && !loading && (
+        <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-4">
+          <svg className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          <div>
+            <p className="text-sm font-semibold text-amber-800">자재 DB가 비어 있습니다</p>
+            <p className="text-xs text-amber-600 mt-1">대시보드 상단의 <span className="font-bold">자재 DB 업데이트</span> 버튼으로 엑셀/CSV 파일을 업로드해주세요.</p>
+          </div>
         </div>
       )}
 

@@ -23,9 +23,18 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Parse Excel
+    // Parse Excel/CSV
     const arrayBuffer = await file.arrayBuffer();
-    const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
+    const ext = file.name?.split(".").pop()?.toLowerCase() || "";
+    let workbook;
+    if (ext === "csv") {
+      // CSV: decode as UTF-8 text, then parse
+      const decoder = new TextDecoder("utf-8");
+      const csvText = decoder.decode(new Uint8Array(arrayBuffer));
+      workbook = XLSX.read(csvText, { type: "string" });
+    } else {
+      workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
+    }
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
     const rows: Record<string, string>[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
