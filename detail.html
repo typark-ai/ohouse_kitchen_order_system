@@ -2732,38 +2732,56 @@ const GIGI_CATEGORY_ICONS = {
 };
 const DEFAULT_CAT_STYLE = { icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>, color: "text-gray-600", bg: "bg-gray-100" };
 
-function GigiTab({ onToast, onGigiSchedule }) {
+function GigiTab({ onToast, onGigiOrderSubmit, gigiOrderData }) {
   const { gigiDb, loading, dbSource } = useGigiDb();
   const [selections, setSelections] = useState({});
   const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
   const [gigiDate, setGigiDate] = useState("");
+
+  /* 발주 상태 파생 */
+  const orderStatus = gigiOrderData?.status || null; // null | "발주요청완료" | "발주확정" | "발주요청반려"
+  const isSubmitted = orderStatus === "발주요청완료";
+  const isApproved  = orderStatus === "발주확정";
+  const isRejected  = orderStatus === "발주요청반려";
+  const isLocked    = isSubmitted || isApproved; // 수정 불가
+  const canSubmit   = !isLocked; // 최초 또는 반려 후 재발주 가능
 
   /* gigiDb 로드 완료 시 selections 초기화 */
   useEffect(() => {
-    setSelections(buildInitialSelections(gigiDb));
+    if (gigiOrderData?.items && Object.keys(gigiDb).length > 0) {
+      // 기존 발주 데이터 복원
+      const restored = {};
+      gigiOrderData.items.forEach(item => {
+        restored[item.category] = { mode: item.mode, value: item.value, custom: item.custom || "" };
+      });
+      // DB의 카테고리 중 복원되지 않은 것 초기화
+      Object.keys(gigiDb).forEach(k => {
+        if (!restored[k]) restored[k] = { mode: "select", value: "", custom: "" };
+      });
+      setSelections(restored);
+      setGigiDate(gigiOrderData.requestedDate || "");
+    } else {
+      setSelections(buildInitialSelections(gigiDb));
+    }
   }, [gigiDb]);
+
+  /* 반려 시 selections/date 유지하되 편집 가능 */
 
   const handleChange = useCallback((cat, newState) => {
     setSelections(prev => ({ ...prev, [cat]: newState }));
-    setSubmitted(false);
   }, []);
 
   /* 선택된 항목 요약 */
-  const selectedCount = Object.values(selections).filter(s =>
-    s.value && s.value !== "" && (s.mode === "select" || (s.mode === "custom" && s.custom.trim()))
-  ).length;
+  const selectedItems = Object.entries(selections).filter(([_, s]) =>
+    (s.mode === "select" && s.value) || (s.mode === "custom" && s.custom.trim())
+  );
+  const selectedCount = selectedItems.length;
 
-  const handleDateChange = (val) => {
-    setGigiDate(val);
-  };
+  const handleDateChange = (val) => setGigiDate(val);
 
   const handleSubmit = () => {
-    const hasAny = Object.values(selections).some(s =>
-      (s.mode === "select" && s.value) ||
-      (s.mode === "custom" && s.custom.trim())
-    );
-    if (!hasAny) {
+    if (!canSubmit) return;
+    if (selectedCount === 0) {
       onToast({ type: "warning", title: "선택 항목 없음", message: "최소 1개 이상의 기기를 선택하거나 입력해주세요." });
       return;
     }
@@ -2774,13 +2792,24 @@ function GigiTab({ onToast, onGigiSchedule }) {
     setSubmitting(true);
     setTimeout(() => {
       setSubmitting(false);
-      setSubmitted(true);
-      /* 일정 확정 → 부모에 전달 → schedule.gigi + LeftPanel + index.html 반영 */
-      if (onGigiSchedule) onGigiSchedule(gigiDate);
+      const items = selectedItems.map(([cat, s]) => ({
+        category: cat,
+        mode: s.mode,
+        value: s.value,
+        custom: s.custom || "",
+      }));
+      if (onGigiOrderSubmit) onGigiOrderSubmit({
+        items,
+        requestedDate: gigiDate,
+        status: "발주요청완료",
+        submittedAt: new Date().toISOString(),
+        rejectionReason: "",
+        rejectedAt: "",
+      });
       onToast({
         type: "success",
         title: "기기 발주 요청 완료",
-        message: `${selectedCount}개 기기의 발주 요청이 접수되었습니다. 납기: ${gigiDate}`,
+        message: `${selectedCount}개 기기의 발주 요청이 접수되었습니다. 희망 납기: ${gigiDate}`,
         duration: 5000,
       });
     }, 1800);
@@ -2805,24 +2834,84 @@ function GigiTab({ onToast, onGigiSchedule }) {
             <p className="text-xs text-gray-400 mt-1">자재 DB에서 기기를 검색하거나 직접 입력하세요.</p>
           </div>
         </div>
-        {selectedCount > 0 && (
-          <span className="flex items-center gap-2 text-xs font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-3 py-1 rounded-full">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-            {selectedCount}개 선택됨
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {selectedCount > 0 && (
+            <span className="flex items-center gap-2 text-xs font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-3 py-1 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              {selectedCount}개 선택됨
+            </span>
+          )}
+          {orderStatus && (
+            <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
+              isApproved ? "bg-emerald-100 text-emerald-700 border-emerald-200" :
+              isRejected ? "bg-red-100 text-red-700 border-red-200" :
+              "bg-brand-weak text-brand border-brand/20"
+            }`}>
+              {orderStatus}
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* ── 안내 배너 (미발주 기본값 안내) ── */}
-      <div className="flex items-start gap-2 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
-        <svg className="w-4 h-4 text-gray-400 mt-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-        <p className="text-xs text-gray-500 leading-relaxed">
-          기본값은 <span className="font-semibold text-gray-700">미발주</span>입니다. 드롭다운을 눌러 자재 DB에서 검색하거나,
-          목록 하단의 <span className="font-semibold text-purple-700">+ 직접 입력</span>으로 모델명을 직접 작성할 수 있습니다.
-        </p>
-      </div>
+      {/* ── 반려 사유 배너 ── */}
+      {isRejected && gigiOrderData?.rejectionReason && (
+        <div className="bg-red-50 border-2 border-red-200 rounded-xl px-5 py-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <svg className="w-5 h-5 text-red-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+            </svg>
+            <p className="text-sm font-bold text-red-700">발주가 반려되었습니다</p>
+          </div>
+          <div className="bg-white/80 rounded-lg px-4 py-3 border border-red-100">
+            <p className="text-xs font-semibold text-red-600 mb-1">반려 사유</p>
+            <p className="text-sm text-gray-700 leading-relaxed">{gigiOrderData.rejectionReason}</p>
+          </div>
+          {gigiOrderData.rejectedAt && (
+            <p className="text-xs text-red-400">반려 일시: {new Date(gigiOrderData.rejectedAt).toLocaleString("ko-KR")}</p>
+          )}
+          <p className="text-xs text-red-600 font-medium">아래 항목을 수정한 후 다시 발주 요청해주세요.</p>
+        </div>
+      )}
+
+      {/* ── 승인 완료 배너 ── */}
+      {isApproved && (
+        <div className="flex items-center gap-3 bg-emerald-50 border-2 border-emerald-200 rounded-xl px-5 py-4">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center flex-shrink-0">
+            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-sm font-bold text-emerald-800">기기 발주 확정</p>
+            <p className="text-xs text-emerald-600 mt-0.5">공급업체가 발주를 승인했습니다. 납기 일정: <span className="font-bold">{gigiOrderData?.requestedDate}</span></p>
+          </div>
+        </div>
+      )}
+
+      {/* ── 발주 요청 중 배너 ── */}
+      {isSubmitted && (
+        <div className="flex items-center gap-2 bg-brand-weak border border-brand/20 rounded-xl px-4 py-3">
+          <svg className="w-4 h-4 text-brand flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-xs text-brand leading-relaxed">
+            <span className="font-bold">발주 요청이 접수되었습니다.</span> 공급업체의 승인을 대기하고 있습니다.
+          </p>
+        </div>
+      )}
+
+      {/* ── 안내 배너 ── */}
+      {canSubmit && (
+        <div className="flex items-start gap-2 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+          <svg className="w-4 h-4 text-gray-400 mt-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-xs text-gray-500 leading-relaxed">
+            기본값은 <span className="font-semibold text-gray-700">미발주</span>입니다. 드롭다운을 눌러 자재 DB에서 검색하거나,
+            목록 하단의 <span className="font-semibold text-purple-700">+ 직접 입력</span>으로 모델명을 직접 작성할 수 있습니다.
+          </p>
+        </div>
+      )}
 
       {/* ── DB 출처 안내 ── */}
       {dbSource === "db" && (
@@ -2833,7 +2922,7 @@ function GigiTab({ onToast, onGigiSchedule }) {
           <span>업로드된 자재 DB를 사용하고 있습니다.</span>
         </div>
       )}
-      {dbSource === "empty" && !loading && (
+      {dbSource === "empty" && !loading && canSubmit && (
         <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-4">
           <svg className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
@@ -2857,7 +2946,7 @@ function GigiTab({ onToast, onGigiSchedule }) {
 
       {/* ── 카테고리 폼 ── */}
       {!loading && (
-      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm divide-y divide-gray-100">
+      <div className={`bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm divide-y divide-gray-100 ${isLocked ? "opacity-60 pointer-events-none" : ""}`}>
         {Object.keys(gigiDb).map(catKey => {
           const sel = selections[catKey] || { mode: "select", value: "", custom: "" };
           const isSet = sel.value && (sel.mode === "select" || sel.custom.trim());
@@ -2903,7 +2992,7 @@ function GigiTab({ onToast, onGigiSchedule }) {
       )}
 
       {/* ── 납기 일정 선택 ── */}
-      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+      <div className={`bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm ${isLocked ? "opacity-60 pointer-events-none" : ""}`}>
         <div className="px-5 py-4">
           <div className="flex items-center gap-2 mb-3">
             <span className="w-6 h-6 rounded-lg bg-brand-weak text-brand flex items-center justify-center flex-shrink-0">
@@ -2911,7 +3000,7 @@ function GigiTab({ onToast, onGigiSchedule }) {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
             </span>
-            <span className="text-sm font-bold text-gray-800">기기 납기 일정</span>
+            <span className="text-sm font-bold text-gray-800">희망 납기 일정</span>
             {gigiDate && (
               <span className="ml-auto text-xs font-semibold text-brand bg-brand-weak border border-brand/20 px-2 py-0.5 rounded-full">
                 {gigiDate}
@@ -2923,41 +3012,27 @@ function GigiTab({ onToast, onGigiSchedule }) {
             value={gigiDate}
             min={today}
             onChange={e => handleDateChange(e.target.value)}
-            disabled={submitted}
-            className={`w-full px-3 py-2 text-sm border rounded-lg transition-colors ${
-              submitted
-                ? "border-gray-100 bg-gray-50 text-gray-500 cursor-default"
-                : "border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
-            }`}
+            className="w-full px-3 py-2 text-sm border border-gray-200 bg-white text-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
           />
-          {!gigiDate && !submitted && (
-            <p className="text-xs text-gray-400 mt-2">발주 요청 시 기기 납기 일정이 공정일정에 자동 반영됩니다.</p>
+          {!gigiDate && (
+            <p className="text-xs text-gray-400 mt-2">공급업체가 승인하면 이 일정이 공정일정에 확정 반영됩니다.</p>
           )}
         </div>
       </div>
 
       {/* ── 발주 요청 버튼 ── */}
       <div className="pt-1">
-        {submitted && (
-          <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 mb-3">
-            <svg className="w-4 h-4 text-emerald-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <div className="text-xs text-emerald-700 leading-relaxed">
-              <span className="font-bold">발주 요청 완료.</span> 담당자가 검토 후 발주 확정 또는 반려 처리합니다.
-              반려 시 해당 기기 항목을 수정 후 재요청하세요.
-            </div>
-          </div>
-        )}
         <button
           onClick={handleSubmit}
-          disabled={submitting || submitted}
+          disabled={submitting || isLocked}
           className={`w-full py-4 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 transition-all duration-300
-            ${submitted
+            ${isApproved
               ? "btn-confirm-done text-white cursor-default shadow-sm"
-              : submitting
-                ? "bg-brand text-white cursor-wait shadow-md"
-                : "bg-brand hover:bg-[#0090e6] text-white shadow-sm  hover:shadow hover:-translate-y-0.5"
+              : isSubmitted
+                ? "bg-gray-200 text-gray-400 cursor-default"
+                : submitting
+                  ? "bg-brand text-white cursor-wait shadow-md"
+                  : "bg-brand hover:bg-[#0090e6] text-white shadow-sm hover:shadow hover:-translate-y-0.5"
             }`}
         >
           {submitting ? (
@@ -2968,12 +3043,26 @@ function GigiTab({ onToast, onGigiSchedule }) {
               </svg>
               발주 요청 처리 중…
             </>
-          ) : submitted ? (
+          ) : isApproved ? (
             <>
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              기기 발주 요청 완료
+              발주 확정 완료
+            </>
+          ) : isSubmitted ? (
+            <>
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              승인 대기 중
+            </>
+          ) : isRejected ? (
+            <>
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              수정 후 재발주 요청
             </>
           ) : (
             <>
@@ -4215,7 +4304,7 @@ function getTabStatusStyle(text) {
   return "text-gray-400";
 }
 
-function RightPanel({ onToast, onScheduleUnlock, caseStatus, onStatusChange, silcheukData, onProposalsSend, onFinalConfirm, onResultConfirm, onMokdaeSchedule, mokdaeData, onMokdaeVersionsChange, onCadChange, onSectionCChange, onClaimsChange, mokdaeProductionStarted, onGigiSchedule, onSangpanSchedule, sangpanData, onSangpanVersionsChange, onDrawingChange, onSangpanSectionCChange, onSangpanClaimsChange, sangpanProductionStarted }) {
+function RightPanel({ onToast, onScheduleUnlock, caseStatus, onStatusChange, silcheukData, onProposalsSend, onFinalConfirm, onResultConfirm, onMokdaeSchedule, mokdaeData, onMokdaeVersionsChange, onCadChange, onSectionCChange, onClaimsChange, mokdaeProductionStarted, onGigiSchedule, onGigiOrderSubmit, gigiOrderData, onSangpanSchedule, sangpanData, onSangpanVersionsChange, onDrawingChange, onSangpanSectionCChange, onSangpanClaimsChange, sangpanProductionStarted }) {
   const [activeTab, setActiveTab] = useState("목대");
 
   return (
@@ -4313,7 +4402,7 @@ function RightPanel({ onToast, onScheduleUnlock, caseStatus, onStatusChange, sil
           />
         </div>
         <div style={{ display: activeTab !== "기기" ? "none" : "" }}>
-          <GigiTab onToast={onToast} onGigiSchedule={onGigiSchedule} />
+          <GigiTab onToast={onToast} onGigiOrderSubmit={onGigiOrderSubmit} gigiOrderData={gigiOrderData} />
         </div>
       </div>
     </main>
@@ -4535,7 +4624,7 @@ function App() {
     });
   }, [isNew]);
 
-  /* ═══ 기기 Handler ═══ */
+  /* ═══ 기기 Handlers ═══ */
   const handleGigiSchedule = useCallback((date) => {
     if (isNew) return;
     setCaseData(prev => {
@@ -4545,6 +4634,20 @@ function App() {
         ...prev,
         gigiFinalDate: date,
         schedule: { ...(prev.schedule || {}), gigi: date },
+      };
+      persistItem(updated);
+      return updated;
+    });
+  }, [isNew]);
+
+  const handleGigiOrderSubmit = useCallback((orderData) => {
+    if (isNew) return;
+    setCaseData(prev => {
+      if (!prev) return prev;
+      const updated = {
+        ...prev,
+        gigiOrderData: orderData,
+        status: { ...prev.status, gigi: orderData.status },
       };
       persistItem(updated);
       return updated;
@@ -4721,6 +4824,8 @@ function App() {
           onClaimsChange={handleClaimsChange}
           mokdaeProductionStarted={caseData.mokdaeProductionStarted || false}
           onGigiSchedule={handleGigiSchedule}
+          onGigiOrderSubmit={handleGigiOrderSubmit}
+          gigiOrderData={caseData.gigiOrderData || null}
           onSangpanSchedule={handleSangpanSchedule}
           sangpanData={{
             versions:         caseData.sangpanVersions          || [],
