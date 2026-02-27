@@ -1305,7 +1305,7 @@ function Modal({ open, onClose, children, maxW = "max-w-lg" }) {
 /* ═══════════════════════════════════════════════════════
    목대 탭 — Section A: 발주 서류 & 버전 히스토리
 ═══════════════════════════════════════════════════════ */
-function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast, onStatusChange, silcheukImages = [], onMokdaeSchedule, uploadedFiles: initUploadedFiles = {}, onVersionsChange, silcheukFinalDate = "", mokdaeProductionStarted = false }) {
+function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast, onStatusChange, silcheukImages = [], onMokdaeSchedule, uploadedFiles: initUploadedFiles = {}, onVersionsChange, silcheukFinalDate = "", mokdaeProductionStarted = false, mokdaeConfirmedAt = null, onCadReset, onUrgentChange }) {
   const [versions, setVersions]     = useState(initVersions);
   const [activeVer, setActiveVer]   = useState(initActive);
   const [uploadedFiles, setUploadedFiles] = useState(initUploadedFiles); // versionNo → [{id,name,size,url,isImage}]
@@ -1436,7 +1436,15 @@ function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast
     setVersions(prev => prev.map(v =>
       v.versionNo === activeVer ? { ...v, isNew: false, factoryChecked: false, sentAt: now, sentBy: "관리자" } : v
     ));
-    onToast({ type: "success", title: `발주 V${activeVer} 요청 완료`, message: "공장으로 발주 요청이 전송되었습니다." });
+    /* 발주서 재발송 시 기존 CAD 승인 해제 */
+    if (onCadReset) onCadReset();
+    /* 발주 확정 후 수정 → 긴급발주 상태 */
+    if (mokdaeConfirmedAt) {
+      if (onUrgentChange) onUrgentChange();
+      onToast({ type: "warning", title: `발주 V${activeVer} 긴급 발송`, message: "확정 후 수정 발송 — 긴급발주 상태로 변경됩니다.", duration: 5000 });
+    } else {
+      onToast({ type: "success", title: `발주 V${activeVer} 요청 완료`, message: "공장으로 발주 요청이 전송되었습니다." });
+    }
   };
 
   return (
@@ -4225,8 +4233,18 @@ function SangpanTab({ onToast, onStatusChange, silcheukImages, onSangpanSchedule
 /* ═══════════════════════════════════════════════════════
    목대 탭 — 전체 레이아웃
 ═══════════════════════════════════════════════════════ */
-function MokdaeTab({ onToast, onStatusChange, silcheukImages, onMokdaeSchedule, mokdaeData = {}, onMokdaeVersionsChange, onCadChange, silcheukFinalDate = "", onSectionCChange, onClaimsChange, mokdaeProductionStarted = false }) {
+function MokdaeTab({ onToast, onStatusChange, silcheukImages, onMokdaeSchedule, mokdaeData = {}, onMokdaeVersionsChange, onCadChange, silcheukFinalDate = "", onSectionCChange, onClaimsChange, mokdaeProductionStarted = false, onUrgentChange }) {
   const md = mokdaeData;
+
+  /* 발주서 재발송 시 CAD 승인 상태 전부 해제 */
+  const handleCadReset = useCallback(() => {
+    const cadVersions = md.cadVersions || [];
+    if (cadVersions.length > 0) {
+      const resetCad = cadVersions.map(v => ({ ...v, status: "승인해제" }));
+      if (onCadChange) onCadChange(resetCad);
+    }
+  }, [md.cadVersions, onCadChange]);
+
   return (
     <div className="p-5 space-y-5 max-w-4xl">
 
@@ -4241,6 +4259,9 @@ function MokdaeTab({ onToast, onStatusChange, silcheukImages, onMokdaeSchedule, 
         onVersionsChange={onMokdaeVersionsChange}
         silcheukFinalDate={silcheukFinalDate}
         mokdaeProductionStarted={mokdaeProductionStarted}
+        mokdaeConfirmedAt={md.confirmedAt || null}
+        onCadReset={handleCadReset}
+        onUrgentChange={onUrgentChange}
       />
       <MokdaeSectionB
         cadVersions={md.cadVersions || []}
@@ -4386,6 +4407,7 @@ function RightPanel({ onToast, onScheduleUnlock, caseStatus, onStatusChange, sil
             onSectionCChange={onSectionCChange}
             onClaimsChange={onClaimsChange}
             mokdaeProductionStarted={mokdaeProductionStarted}
+            onUrgentChange={handleMokdaeUrgentChange}
           />
         </div>
         <div style={{ display: activeTab !== "상판" ? "none" : "" }}>
@@ -4613,6 +4635,20 @@ function App() {
       if (confirmedAt && prev.status?.mokdae !== "제작진행") {
         updated.status = { ...updated.status, mokdae: "발주확정" };
       }
+      persistItem(updated);
+      return updated;
+    });
+  }, [isNew]);
+
+  /* 목대 긴급발주 (확정 후 수정) → status.mokdae = "확정후조정(긴급)" → localStorage 영속화 */
+  const handleMokdaeUrgentChange = useCallback(() => {
+    if (isNew) return;
+    setCaseData(prev => {
+      if (!prev) return prev;
+      const updated = {
+        ...prev,
+        status: { ...prev.status, mokdae: "확정후조정(긴급)" },
+      };
       persistItem(updated);
       return updated;
     });
