@@ -17,7 +17,14 @@
           colors: {
             brand: '#00A1FF',
             'brand-weak': '#F0F8FC',
+            'genuine-blue': { 50:'#F0F8FC',100:'#D9EFFF',200:'#9ED7FF',300:'#5EBFFF',400:'#00A1FF',500:'#0A78C0',600:'#095890' },
+            success: { DEFAULT:'#16a34a', weak:'#f0fdf4', foreground:'#15803d' },
+            warning: { DEFAULT:'#fbbf24', weak:'#fffbeb', foreground:'#b45309' },
+            destructive: { DEFAULT:'#dc2626', weak:'#fef2f2', foreground:'#fef2f2' },
+            muted: { DEFAULT:'#f3f4f6', foreground:'#6b7280' },
+            accent: { DEFAULT:'#f3f4f6', foreground:'#111827' },
           },
+          borderRadius: { '2xl':'1rem', '3xl':'1.25rem' },
           animation: {
             'slide-in-right': 'slideInRight 0.3s ease-out',
             'fade-out': 'fadeOut 0.4s ease-in forwards',
@@ -46,11 +53,21 @@
   <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
   <style>
-    body { font-family: 'Pretendard Variable', 'Pretendard', 'Inter', sans-serif; }
+    body { font-family: 'Pretendard Variable', 'Pretendard', 'Inter', sans-serif; -webkit-font-smoothing: antialiased; letter-spacing: -0.3px; word-break: keep-all; }
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: #F9FAFB; }
     ::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: #9CA3AF; }
+
+    /* Typography */
+    .body-xs  { font-size: 0.625rem; line-height: 1.375; font-weight: 400; }
+    .body-sm  { font-size: 0.75rem;  line-height: 1.375; font-weight: 400; }
+    .body-md  { font-size: 0.875rem; line-height: 1.375; font-weight: 400; }
+    .body-lg  { font-size: 1rem;     line-height: 1.375; font-weight: 400; }
+    .heading-xs { font-size: 0.875rem; line-height: 1.25; font-weight: 600; }
+    .heading-sm { font-size: 0.875rem; line-height: 1.25; font-weight: 600; }
+    .heading-md { font-size: 1.125rem; line-height: 1.25; font-weight: 600; }
+    .heading-lg { font-size: 1.25rem;  line-height: 1.25; font-weight: 600; }
 
     .tab-active {
       border-bottom: 2px solid #00A1FF;
