@@ -3791,8 +3791,21 @@ function SangpanSectionA({ versions: initVersions, activeVer: initActive, onToas
                       {latestMokdaeFiles.length > 0 && (
                         <div className="flex flex-wrap gap-1.5">
                           {latestMokdaeFiles.map(f => (
-                            <span key={f.id} className="inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-lg">
-                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                            <span key={f.id} className="inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-lg cursor-pointer hover:bg-gray-200 transition-colors"
+                              onClick={() => {
+                                if (f.isImage && f.url) {
+                                  setLightbox({ url: f.url, name: f.name });
+                                } else if (f.url) {
+                                  const a = document.createElement('a');
+                                  a.href = f.url;
+                                  a.download = f.name;
+                                  a.target = '_blank';
+                                  document.body.appendChild(a);
+                                  a.click();
+                                  document.body.removeChild(a);
+                                }
+                              }}>
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                               {f.name}
                             </span>
                           ))}
@@ -3802,6 +3815,19 @@ function SangpanSectionA({ versions: initVersions, activeVer: initActive, onToas
                         <div className="flex items-center gap-2 text-xs text-gray-600">
                           <span className="font-semibold">CAD V{latestCad.versionNo}</span>
                           <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${latestCad.status === "승인" ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-400"}`}>{latestCad.status || "대기"}</span>
+                          {latestCad.previewUrl && (
+                            <span className="inline-flex items-center gap-1 text-xs text-brand cursor-pointer hover:underline"
+                              onClick={() => {
+                                if (latestCad.previewUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+                                  setLightbox({ url: latestCad.previewUrl, name: latestCad.fileName || `CAD V${latestCad.versionNo}` });
+                                } else {
+                                  window.open(latestCad.previewUrl, '_blank');
+                                }
+                              }}>
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                              {latestCad.fileName || "파일 보기"}
+                            </span>
+                          )}
                         </div>
                       )}
                     </div>
@@ -4076,6 +4102,19 @@ function SangpanSectionA({ versions: initVersions, activeVer: initActive, onToas
                       <div className="flex items-center gap-2 text-xs text-gray-600">
                         <span className="font-semibold">CAD V{latestCad.versionNo}</span>
                         <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${latestCad.status === "승인" ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-400"}`}>{latestCad.status || "대기"}</span>
+                        {latestCad.previewUrl && (
+                          <span className="inline-flex items-center gap-1 text-xs text-brand cursor-pointer hover:underline"
+                            onClick={() => {
+                              if (latestCad.previewUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+                                setLightbox({ url: latestCad.previewUrl, name: latestCad.fileName || `CAD V${latestCad.versionNo}` });
+                              } else {
+                                window.open(latestCad.previewUrl, '_blank');
+                              }
+                            }}>
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                            {latestCad.fileName || "파일 보기"}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -5187,14 +5226,50 @@ function App() {
     if (!caseId) return;
     const refresh = () => {
       const fresh = loadItemById(caseId);
-      if (fresh) setCaseData(fresh);
+      if (fresh) {
+        setCaseData(prev => {
+          // Preserve gigiOrderData from DB since localStorage doesn't store it
+          const merged = { ...fresh };
+          if (prev?.gigiOrderData && !merged.gigiOrderData) {
+            merged.gigiOrderData = prev.gigiOrderData;
+          }
+          return merged;
+        });
+      }
     };
     const onStorage = (e) => {
       if (e.key !== LS_KEY) return;
       refresh();
     };
     const onVisible = () => {
-      if (document.visibilityState === 'visible') refresh();
+      if (document.visibilityState === 'visible') {
+        // Re-fetch gigi data from DB on tab focus
+        (async () => {
+          try {
+            const gigiRes = await fetch(
+              `${SUPABASE_URL}/rest/v1/gigi_store?case_id=eq.${encodeURIComponent(caseId)}&select=data`,
+              { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
+            ).then(r => r.ok ? r.json() : []).catch(() => []);
+            
+            setCaseData(prev => {
+              if (!prev) return prev;
+              const fresh = loadItemById(caseId);
+              let merged = fresh ? { ...prev, ...fresh } : prev;
+              if (gigiRes.length > 0 && gigiRes[0].data) {
+                merged = { ...merged, gigiOrderData: gigiRes[0].data };
+                if (gigiRes[0].data.status) {
+                  merged.status = { ...merged.status, gigi: gigiRes[0].data.status };
+                }
+              } else if (prev.gigiOrderData) {
+                merged.gigiOrderData = prev.gigiOrderData;
+              }
+              return merged;
+            });
+          } catch (e) {
+            console.warn("Visibility refresh failed:", e);
+          }
+        })();
+      }
     };
     window.addEventListener('storage', onStorage);
     document.addEventListener('visibilitychange', onVisible);
