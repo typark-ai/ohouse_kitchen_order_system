@@ -2408,6 +2408,7 @@ function useGigiDb() {
 
   useEffect(() => {
     (async () => {
+      const GIGI_MAIN_CATEGORIES = ["싱크볼", "수전", "후드", "쿡탑"];
       try {
         const res = await fetch(
           `${SUPABASE_URL}/rest/v1/materials?select=category,brand,item_name&order=category,item_name`,
@@ -2425,16 +2426,20 @@ function useGigiDb() {
           setLoading(false);
           return;
         }
-        // Group by category
+        // Group by category — 싱크볼/수전/후드/쿡탑 은 개별, 나머지는 기타
         const grouped = {};
         rows.forEach(r => {
-          if (!grouped[r.category]) grouped[r.category] = [];
-          const label = r.brand
-            ? `[${r.brand}] ${r.item_name}`
-            : r.item_name;
-          grouped[r.category].push(label);
+          const cat = GIGI_MAIN_CATEGORIES.includes(r.category) ? r.category : "기타";
+          if (!grouped[cat]) grouped[cat] = [];
+          // item_name = 건자재항목(드롭다운용) 칼럼 값 그대로 사용
+          grouped[cat].push(r.item_name);
         });
-        setGigiDb(grouped);
+        // 카테고리 순서 보장: 쿡탑, 후드, 수전, 싱크볼, 기타
+        const ordered = {};
+        [...GIGI_MAIN_CATEGORIES, "기타"].forEach(cat => {
+          if (grouped[cat]) ordered[cat] = grouped[cat];
+        });
+        setGigiDb(ordered);
         setDbSource("db");
       } catch (e) {
         console.warn("자재 DB 로드 실패:", e);
