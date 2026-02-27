@@ -137,7 +137,58 @@ const _kstDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seo
 const TODAY = new Date(_kstDateStr + 'T00:00:00');
 const TODAY_STR = _kstDateStr;
 
-/* ── localStorage 유틸 ── */
+/* ── Supabase DB 유틸 ── */
+const SUPABASE_URL = "https://ykifurzrrbjrgjrznimk.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlraWZ1cnpycmJqcmdqcnpuaW1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMjE3NTcsImV4cCI6MjA4NzY5Nzc1N30.BVTlrG_Q_cXqj6qOa_rZPXrCs7MhwuR9o8koncGoUU0";
+const SB_HEADERS = { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" };
+
+function dbRowToCase(r) {
+  return {
+    id: r.id, customer: r.customer || "", phone: r.phone || "", address: r.address || "", manager: r.manager || "",
+    schedule: r.schedule || {}, status: r.status || {},
+    archived: r.archived || false, cancelled: r.cancelled || false,
+    mokdaeVersions: r.mokdae_versions || [], mokdaeUploadedFiles: r.mokdae_uploaded_files || {},
+    cadVersions: r.cad_versions || [],
+    mokdaeConsumerApproved: r.mokdae_consumer_approved || false, mokdaeConfirmedAt: r.mokdae_confirmed_at || null,
+    mokdaeClaims: r.mokdae_claims || [],
+    mokdaeProductionStarted: r.mokdae_production_started || false,
+    mokdaeFinalDate: r.mokdae_final_date || "",
+    sangpanVersions: r.sangpan_versions || [], sangpanUploadedFiles: r.sangpan_uploaded_files || {},
+    sangpanDrawingVersions: r.sangpan_drawing_versions || [],
+    sangpanConsumerApproved: r.sangpan_consumer_approved || false, sangpanConfirmedAt: r.sangpan_confirmed_at || null,
+    sangpanClaims: r.sangpan_claims || [],
+    sangpanProductionStarted: r.sangpan_production_started || false,
+    sangpanFinalDate: r.sangpan_final_date || "",
+    gigiFinalDate: r.gigi_final_date || "",
+    silcheukProposals: r.silcheuk_proposals || [], silcheukSent: r.silcheuk_sent || false,
+    silcheukEngResponse: r.silcheuk_eng_response || null,
+    silcheukFinalized: r.silcheuk_finalized || false,
+    silcheukFinalDate: r.silcheuk_final_date || "", silcheukFinalTime: r.silcheuk_final_time || "",
+    silcheukUploadResult: r.silcheuk_upload_result || null, silcheukResultDone: r.silcheuk_result_done || false,
+  };
+}
+
+async function loadAllCasesFromDB() {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/cases?select=*&order=created_at.desc`, {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
+    });
+    if (!res.ok) throw new Error("fetch failed");
+    return (await res.json()).map(dbRowToCase);
+  } catch (e) { console.warn("DB load failed:", e); return null; }
+}
+
+async function patchCaseInDB(caseId, fields) {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/cases?id=eq.${encodeURIComponent(caseId)}`, {
+      method: "PATCH",
+      headers: SB_HEADERS,
+      body: JSON.stringify(fields),
+    });
+  } catch (e) { console.warn("DB patch failed:", e); }
+}
+
+/* ── localStorage 유틸 (하위 호환) ── */
 const LS_KEY = 'JIKSIGONG_DATA';
 
 function loadData() {
@@ -721,7 +772,8 @@ function DeleteConfirmModal({ open, count, onConfirm, onCancel }) {
    7. App (최상위)
 ─────────────────────────────────────────────── */
 function App() {
-  const [items, setItems]             = useState(() => loadData() ?? []);
+  const [items, setItems]             = useState([]);
+  const [loading, setLoading]         = useState(true);
   const [tab, setTab]                 = useState("active");     // "active" | "archived" | "cancelled"
   const [selectedIds, setSelectedIds] = useState([]);
   const [search, setSearch]           = useState("");
@@ -729,8 +781,53 @@ function App() {
   const [dbModalOpen, setDbModalOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
-  /* localStorage 동기화 */
-  useEffect(() => { saveData(items); }, [items]);
+  /* DB primary load + gigi_store 병합 */
+  const refreshFromDB = useCallback(async () => {
+    try {
+      const [casesFromDb, gigiRows] = await Promise.all([
+        loadAllCasesFromDB(),
+        fetch(`${SUPABASE_URL}/rest/v1/gigi_store?select=case_id,data`, {
+          headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
+        }).then(r => r.ok ? r.json() : []).catch(() => []),
+      ]);
+      if (casesFromDb) {
+        // gigi_store 데이터를 cases에 병합
+        const gigiMap = {};
+        gigiRows.forEach(g => { gigiMap[g.case_id] = g.data; });
+        const merged = casesFromDb.map(c => {
+          const gigiData = gigiMap[c.id];
+          if (gigiData) {
+            return {
+              ...c,
+              gigiOrderData: gigiData,
+              status: { ...c.status, gigi: gigiData.status || c.status.gigi },
+            };
+          }
+          return c;
+        });
+        setItems(merged);
+        // localStorage도 동기화 (detail.html 하위 호환)
+        saveData(merged);
+      } else {
+        // DB 실패 시 localStorage fallback
+        setItems(loadData());
+      }
+    } catch (e) {
+      console.warn("DB load failed, fallback to localStorage:", e);
+      setItems(loadData());
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { refreshFromDB(); }, [refreshFromDB]);
+
+  /* 탭 전환 시 DB 새로고침 */
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') refreshFromDB(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [refreshFromDB]);
 
   /* 탭 전환 시 선택 초기화 */
   const handleTabChange = t => { setTab(t); setSelectedIds([]); setSearch(""); setManagerFilter(""); };
@@ -758,32 +855,50 @@ function App() {
     setSelectedIds(checked ? filtered.map(r => r.id) : []);
   };
 
-  /* 현장 이동 액션 (아카이브 ↔ 진행중) */
+  /* 현장 이동 액션 (아카이브 ↔ 진행중) → DB 반영 */
   const handleMove = () => {
     if (selectedIds.length === 0) return;
     const toArchive = tab === "active";
-    setItems(prev => prev.map(r =>
-      selectedIds.includes(r.id) ? { ...r, archived: toArchive } : r
-    ));
+    setItems(prev => {
+      const updated = prev.map(r =>
+        selectedIds.includes(r.id) ? { ...r, archived: toArchive } : r
+      );
+      saveData(updated);
+      return updated;
+    });
+    // DB 반영
+    selectedIds.forEach(id => patchCaseInDB(id, { archived: tab === "active" }));
     setSelectedIds([]);
   };
 
-  /* 현장 삭제 액션 → cancelled: true */
+  /* 현장 삭제 액션 → cancelled: true → DB 반영 */
   const handleDelete = () => {
     if (selectedIds.length === 0) return;
-    setItems(prev => prev.map(r =>
-      selectedIds.includes(r.id) ? { ...r, cancelled: true } : r
-    ));
+    setItems(prev => {
+      const updated = prev.map(r =>
+        selectedIds.includes(r.id) ? { ...r, cancelled: true } : r
+      );
+      saveData(updated);
+      return updated;
+    });
+    // DB 반영
+    selectedIds.forEach(id => patchCaseInDB(id, { cancelled: true }));
     setSelectedIds([]);
     setDeleteConfirmOpen(false);
   };
 
-  /* 취소된 현장 복원 → 진행중으로 */
+  /* 취소된 현장 복원 → 진행중으로 → DB 반영 */
   const handleRestore = () => {
     if (selectedIds.length === 0) return;
-    setItems(prev => prev.map(r =>
-      selectedIds.includes(r.id) ? { ...r, cancelled: false, archived: false } : r
-    ));
+    setItems(prev => {
+      const updated = prev.map(r =>
+        selectedIds.includes(r.id) ? { ...r, cancelled: false, archived: false } : r
+      );
+      saveData(updated);
+      return updated;
+    });
+    // DB 반영
+    selectedIds.forEach(id => patchCaseInDB(id, { cancelled: false, archived: false }));
     setSelectedIds([]);
   };
 
