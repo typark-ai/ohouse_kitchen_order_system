@@ -14,6 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_accounts: {
+        Row: {
+          approved: boolean
+          created_at: string
+          email: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          approved?: boolean
+          created_at?: string
+          email: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          approved?: boolean
+          created_at?: string
+          email?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       cases: {
         Row: {
           address: string | null
@@ -280,7 +304,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      admin_accounts_count: { Args: never; Returns: number }
+      is_approved_admin: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
       process_type: "engineer" | "factory" | "supplier" | "countertop"
