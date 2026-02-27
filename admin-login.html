@@ -10,15 +10,10 @@
     tailwind.config = {
       theme: {
         extend: {
-          fontFamily: {
-            sans: ["'Pretendard Variable'", "Pretendard", "Inter", "sans-serif"],
-          },
+          fontFamily: { sans: ["'Pretendard Variable'", "Pretendard", "Inter", "sans-serif"] },
           colors: {
-            brand: '#00A1FF',
-            'brand-weak': '#F0F8FC',
-            'genuine-blue': { 50:'#F0F8FC',100:'#D9EFFF',200:'#9ED7FF',300:'#5EBFFF',400:'#00A1FF',500:'#0A78C0',600:'#095890' },
-            success: { DEFAULT:'#16a34a', weak:'#f0fdf4', foreground:'#15803d' },
-            destructive: { DEFAULT:'#dc2626', weak:'#fef2f2', foreground:'#fef2f2' },
+            brand: '#00A1FF', 'brand-weak': '#F0F8FC',
+            destructive: { DEFAULT:'#dc2626', weak:'#fef2f2' },
             muted: { DEFAULT:'#f3f4f6', foreground:'#6b7280' },
           },
         },
@@ -41,34 +36,13 @@ const { useState, useEffect } = React;
 const SUPABASE_URL = "https://ykifurzrrbjrgjrznimk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlraWZ1cnpycmJqcmdqcnpuaW1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMjE3NTcsImV4cCI6MjA4NzY5Nzc1N30.BVTlrG_Q_cXqj6qOa_rZPXrCs7MhwuR9o8koncGoUU0";
 
-/* ── Supabase GoTrue helpers ── */
-async function supaSignUp(email, password) {
-  const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
-    method: "POST",
-    headers: { "apikey": SUPABASE_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  return res.json();
-}
-
-async function supaSignIn(email, password) {
-  const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-    method: "POST",
-    headers: { "apikey": SUPABASE_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  return { data: await res.json(), ok: res.ok };
-}
-
 function authHeaders(token) {
   return { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}`, "Content-Type": "application/json" };
 }
 
 function App() {
-  const [mode, setMode] = useState("login"); // "login" | "signup" | "pending" | "email-confirm"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [passwordConfirm, setPasswordConfirm] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -86,14 +60,11 @@ function App() {
 
   async function checkAdminAndRedirect(token) {
     try {
-      // Get current user
       const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
         headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${token}` },
       });
       if (!userRes.ok) return;
       const user = await userRes.json();
-
-      // Check admin_accounts
       const adminRes = await fetch(
         `${SUPABASE_URL}/rest/v1/admin_accounts?user_id=eq.${user.id}&select=approved`,
         { headers: authHeaders(token) }
@@ -102,84 +73,8 @@ function App() {
       const rows = await adminRes.json();
       if (rows.length > 0 && rows[0].approved) {
         window.location.href = "index.html";
-      } else if (rows.length > 0 && !rows[0].approved) {
-        setMode("pending");
       }
     } catch(e) {}
-  }
-
-  async function handleSignUp(e) {
-    e.preventDefault();
-    setError("");
-    if (!email || !password) { setError("이메일과 비밀번호를 입력해 주세요."); return; }
-    if (password.length < 6) { setError("비밀번호는 6자 이상이어야 합니다."); return; }
-    if (password !== passwordConfirm) { setError("비밀번호가 일치하지 않습니다."); return; }
-
-    setLoading(true);
-    try {
-      const result = await supaSignUp(email, password);
-      if (result.error || result.msg) {
-        setError(result.error?.message || result.msg || "회원가입 실패");
-        setLoading(false);
-        return;
-      }
-
-      // If email confirmation is required
-      if (result.id && !result.access_token) {
-        setMode("email-confirm");
-        setLoading(false);
-        return;
-      }
-
-      // If auto-confirmed (shouldn't happen normally, but handle it)
-      if (result.access_token) {
-        // Store auth token
-        localStorage.setItem("sb-ykifurzrrbjrgjrznimk-auth-token", JSON.stringify(result));
-        await registerAdminAccount(result.access_token, result.user?.id || result.id, email);
-      }
-    } catch(err) {
-      setError("네트워크 오류가 발생했습니다.");
-    }
-    setLoading(false);
-  }
-
-  async function registerAdminAccount(token, userId, userEmail) {
-    // Check if this is the first admin
-    const countRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_accounts_count`, {
-      method: "POST",
-      headers: authHeaders(token),
-      body: JSON.stringify({}),
-    });
-    const count = await countRes.json();
-    const isFirst = count === 0;
-
-    // Insert admin account
-    const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/admin_accounts`, {
-      method: "POST",
-      headers: { ...authHeaders(token), "Prefer": "return=representation" },
-      body: JSON.stringify({
-        user_id: userId,
-        email: userEmail,
-        approved: isFirst, // First admin is auto-approved
-      }),
-    });
-
-    if (!insertRes.ok) {
-      const err = await insertRes.json();
-      // If already exists, just check status
-      if (err?.code === "23505") {
-        await checkAdminAndRedirect(token);
-        return;
-      }
-      setError("어드민 계정 등록 실패: " + (err?.message || ""));
-      return;
-    }
-
-    if (isFirst) {
-      window.location.href = "index.html";
-    } else {
-      setMode("pending");
-    }
   }
 
   async function handleLogin(e) {
@@ -189,119 +84,54 @@ function App() {
 
     setLoading(true);
     try {
-      const { data, ok } = await supaSignIn(email, password);
-      if (!ok || data.error) {
-        setError(data.error_description || data.error?.message || data.msg || "로그인 실패");
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+        method: "POST",
+        headers: { "apikey": SUPABASE_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        setError(data.error_description || data.error?.message || data.msg || "로그인에 실패했습니다.");
         setLoading(false);
         return;
       }
 
-      // Store auth token
       localStorage.setItem("sb-ykifurzrrbjrgjrznimk-auth-token", JSON.stringify(data));
       const token = data.access_token;
       const userId = data.user?.id;
 
-      // Check if admin account exists
+      // Check admin_accounts
       const adminRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/admin_accounts?user_id=eq.${userId}&select=*`,
+        `${SUPABASE_URL}/rest/v1/admin_accounts?user_id=eq.${userId}&select=approved`,
         { headers: authHeaders(token) }
       );
       const rows = await adminRes.json();
 
-      if (rows.length === 0) {
-        // No admin account - register
-        await registerAdminAccount(token, userId, email);
-      } else if (rows[0].approved) {
-        window.location.href = "index.html";
-      } else {
-        setMode("pending");
+      if (!rows || rows.length === 0 || !rows[0]?.approved) {
+        localStorage.removeItem("sb-ykifurzrrbjrgjrznimk-auth-token");
+        setError("어드민 권한이 없는 계정입니다. 관리자에게 문의하세요.");
+        setLoading(false);
+        return;
       }
+
+      window.location.href = "index.html";
     } catch(err) {
       setError("네트워크 오류가 발생했습니다.");
     }
     setLoading(false);
   }
 
-  function handleLogoutAndReset() {
-    localStorage.removeItem("sb-ykifurzrrbjrgjrznimk-auth-token");
-    setMode("login");
-    setEmail("");
-    setPassword("");
-    setPasswordConfirm("");
-    setError("");
-  }
-
-  if (mode === "email-confirm") {
-    return (
-      <div className="w-full max-w-md mx-auto px-4">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 text-center">
-          <div className="w-16 h-16 rounded-full bg-brand-weak border border-brand/20 flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-brand" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-          </div>
-          <h2 className="text-lg font-bold text-gray-900 mb-2">이메일을 확인해 주세요</h2>
-          <p className="text-sm text-gray-500 mb-1"><span className="font-semibold text-gray-700">{email}</span>으로</p>
-          <p className="text-sm text-gray-500 mb-6">인증 메일을 발송했습니다. 메일의 링크를 클릭한 뒤 로그인해 주세요.</p>
-          <button onClick={() => setMode("login")} className="w-full h-11 rounded-xl bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold transition-colors">
-            로그인으로 돌아가기
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (mode === "pending") {
-    return (
-      <div className="w-full max-w-md mx-auto px-4">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 text-center">
-          <div className="w-16 h-16 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <h2 className="text-lg font-bold text-gray-900 mb-2">승인 대기 중</h2>
-          <p className="text-sm text-gray-500 mb-6">
-            관리자가 회원가입을 승인할 때까지 기다려 주세요.<br />
-            승인이 완료되면 로그인하여 대시보드에 접근할 수 있습니다.
-          </p>
-          <button onClick={handleLogoutAndReset}
-            className="w-full h-11 rounded-xl border border-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-50 transition-colors">
-            다른 계정으로 로그인
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="w-full max-w-md mx-auto px-4">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-        {/* Header */}
         <div className="px-8 pt-8 pb-4 text-center">
           <img src="/images/ohouse-logo.png" alt="오늘의집" className="h-10 mx-auto mb-4" />
-          <h1 className="text-xl font-bold text-gray-900 mb-1">
-            {mode === "login" ? "어드민 로그인" : "어드민 회원가입"}
-          </h1>
-          <p className="text-sm text-gray-500">
-            {mode === "login" ? "발주 관리 시스템에 접속합니다" : "새 어드민 계정을 등록합니다"}
-          </p>
+          <h1 className="text-xl font-bold text-gray-900 mb-1">어드민 로그인</h1>
+          <p className="text-sm text-gray-500">발주 관리 시스템에 접속합니다</p>
         </div>
 
-        {/* Tab */}
-        <div className="flex mx-8 mb-4 bg-gray-100 rounded-xl p-1">
-          <button onClick={() => { setMode("login"); setError(""); }}
-            className={`flex-1 h-9 rounded-lg text-sm font-semibold transition-all ${mode === "login" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
-            로그인
-          </button>
-          <button onClick={() => { setMode("signup"); setError(""); }}
-            className={`flex-1 h-9 rounded-lg text-sm font-semibold transition-all ${mode === "signup" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
-            회원가입
-          </button>
-        </div>
-
-        {/* Form */}
-        <form onSubmit={mode === "login" ? handleLogin : handleSignUp} className="px-8 pb-8 space-y-4">
+        <form onSubmit={handleLogin} className="px-8 pb-8 space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">이메일</label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)}
@@ -311,17 +141,9 @@ function App() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">비밀번호</label>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-              placeholder="6자 이상"
+              placeholder="비밀번호를 입력하세요"
               className="w-full h-11 px-4 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent bg-white" />
           </div>
-          {mode === "signup" && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">비밀번호 확인</label>
-              <input type="password" value={passwordConfirm} onChange={e => setPasswordConfirm(e.target.value)}
-                placeholder="비밀번호를 다시 입력해 주세요"
-                className="w-full h-11 px-4 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent bg-white" />
-            </div>
-          )}
 
           {error && (
             <div className="flex items-start gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
@@ -335,15 +157,13 @@ function App() {
           <button type="submit" disabled={loading}
             className="w-full h-11 rounded-xl bg-brand hover:bg-[#0090e6] disabled:bg-gray-200 disabled:text-gray-400 text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2">
             {loading ? (
-              <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="10" strokeWidth="4" className="opacity-25" /><path strokeLinecap="round" strokeWidth="4" d="M4 12a8 8 0 018-8" className="opacity-75" /></svg>처리 중…</>
-            ) : mode === "login" ? "로그인" : "회원가입"}
+              <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="10" strokeWidth="4" className="opacity-25" /><path strokeLinecap="round" strokeWidth="4" d="M4 12a8 8 0 018-8" className="opacity-75" /></svg>로그인 중…</>
+            ) : "로그인"}
           </button>
 
-          {mode === "signup" && (
-            <p className="text-xs text-gray-400 text-center leading-relaxed">
-              첫 번째 가입자는 자동 승인됩니다.<br />이후 가입자는 기존 어드민의 승인이 필요합니다.
-            </p>
-          )}
+          <p className="text-xs text-gray-400 text-center">
+            계정이 없으신가요? 관리자에게 계정 등록을 요청하세요.
+          </p>
         </form>
       </div>
     </div>
