@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>상판 발주/도면 관리 | 직시공 B2B</title>
+  <title>상판 발주 관리 | 직시공 B2B</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -21,10 +21,30 @@
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
   <style>
     body { font-family: 'Pretendard Variable', 'Pretendard', 'Inter', sans-serif; background: #F9FAFB; margin: 0; }
-    ::-webkit-scrollbar { width: 5px; height: 5px; }
-    ::-webkit-scrollbar-track { background: #F9FAFB; }
-    ::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 4px; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #F3F4F6; }
+    ::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #9CA3AF; }
+
+    .cb-custom {
+      appearance: none; -webkit-appearance: none;
+      width: 16px; height: 16px;
+      border: 1.5px solid #D1D5DB; border-radius: 4px;
+      background: #fff; cursor: pointer; position: relative;
+      transition: all 0.1s; flex-shrink: 0;
+    }
+    .cb-custom:checked { background: #00A1FF; border-color: #00A1FF; }
+    .cb-custom:checked::after {
+      content: ''; position: absolute; left: 3px; top: 0px;
+      width: 5px; height: 9px;
+      border: 2px solid #fff; border-top: none; border-left: none;
+      transform: rotate(45deg);
+    }
+    .cb-custom:indeterminate { background: #00A1FF; border-color: #00A1FF; }
+    .cb-custom:indeterminate::after {
+      content: ''; position: absolute; left: 3px; top: 6px;
+      width: 8px; height: 0; border-top: 2px solid #fff;
+    }
 
     @keyframes toastIn  { 0% { transform: translateY(20px) scale(0.95); opacity: 0; } 100% { transform: translateY(0) scale(1); opacity: 1; } }
     @keyframes toastOut { 0% { transform: translateY(0) scale(1); opacity: 1; } 100% { transform: translateY(8px) scale(0.95); opacity: 0; } }
@@ -34,9 +54,6 @@
     @keyframes fadeIn { 0% { opacity: 0; transform: translateY(6px); } 100% { opacity: 1; transform: translateY(0); } }
     .anim-in { animation: fadeIn 0.2s ease-out forwards; }
 
-    .step-line { flex: 1; height: 2px; }
-    .site-active { background: #F0F8FC !important; border-left: 3px solid #00A1FF !important; }
-    .btn-press:active { transform: scale(0.97); }
     .drop-active { border-color: #00A1FF !important; background: #F0F8FC !important; }
     .img-thumb { object-fit: cover; border-radius: 8px; width: 56px; height: 56px; flex-shrink: 0; border: 1px solid #E5E7EB; }
   </style>
@@ -47,48 +64,62 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ═══════════════════════════════════════
-   localStorage
+   localStorage — JIKSIGONG_DATA 단일 키 (detail.html과 공유)
 ═══════════════════════════════════════ */
-const LS_CASES   = 'JIKSIGONG_DATA';
-const LS_SANGPAN = 'JIKSIGONG_SANGPAN';
+const LS_KEY = 'JIKSIGONG_DATA';
+const TODAY_STR = new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" });
 
 function loadCases() {
-  try { const r = localStorage.getItem(LS_CASES); return r ? JSON.parse(r) : []; } catch { return []; }
-}
-function loadSangpanStore() {
-  try { const r = localStorage.getItem(LS_SANGPAN); return r ? JSON.parse(r) : {}; } catch { return {}; }
-}
-function saveSangpanStore(data) {
-  try { localStorage.setItem(LS_SANGPAN, JSON.stringify(data)); } catch {}
+  try { const r = localStorage.getItem(LS_KEY); return r ? JSON.parse(r) : []; } catch { return []; }
 }
 
 /* ═══════════════════════════════════════
    Helpers
 ═══════════════════════════════════════ */
-const STEPS = ["발주 대기", "도면 검토", "발주 확정", "제작 진행"];
-
-function getSangpanStep(s) {
-  if (!s || s.includes('대기')) return 0;
-  if (s === '발주확정' || s === '재마감확정') return 2;
-  if (s.includes('진행') || s.includes('재마감')) return 3;
-  return 1; // 도면검토중, 수정요청 등
+function daysDiff(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const d = new Date(dateStr); d.setHours(0,0,0,0);
+  return Math.ceil((d - today) / 86400000);
 }
 
-function getStatusBadgeCls(s) {
-  if (!s || s.includes('대기')) return 'bg-gray-100 text-gray-500 border-gray-200';
-  if (s.includes('반려') || s.includes('수정') || s.includes('긴급')) return 'bg-red-100 text-red-700 border-red-200';
-  if (s.includes('확정') || s.includes('완료')) return 'bg-emerald-100 text-emerald-700 border-emerald-200';
-  return 'bg-brand-weak text-brand border-brand/20';
+/* ── 공장 전용 상태 계산 ── */
+function computeCountertopStatus(c) {
+  if (c.sangpanProductionStarted) return "제작 진행 단계";
+  const claims = c.sangpanClaims || [];
+  if (claims.some(cl => cl.status === "재마감요청")) return "재마감 요청";
+  const isConfirmed = !!c.sangpanConfirmedAt;
+  if (isConfirmed) {
+    const submitted = (c.sangpanVersions || []).filter(v => !v.isNew);
+    const latest = submitted.length > 0 ? submitted[submitted.length - 1] : null;
+    if (latest?.sentAt && c.sangpanConfirmedAt) {
+      try { if (new Date(latest.sentAt) > new Date(c.sangpanConfirmedAt)) return "긴급 발주"; } catch {}
+    }
+    return "발주 확정";
+  }
+  const sangpanDrawingVersions = c.sangpanDrawingVersions || [];
+  if (sangpanDrawingVersions.length > 0) return "도면 확인 단계";
+  const submitted = (c.sangpanVersions || []).filter(v => !v.isNew);
+  if (submitted.length > 0) {
+    const latest = submitted[submitted.length - 1];
+    return latest.factoryChecked ? "상판 도면 작업 중" : "발주서 확인 요청";
+  }
+  return "대기";
 }
 
-function shortAddr(addr) {
-  if (!addr) return '-';
-  const parts = addr.split(' ');
-  return parts.slice(0, 3).join(' ');
+/* ── 공장 상태 배지 스타일 ── */
+function getCountertopStatusStyle(text) {
+  if (!text || text === "대기") return "bg-gray-100 text-gray-500";
+  if (text === "제작 진행 단계") return "bg-teal-50 text-teal-700 border border-teal-200 font-semibold";
+  if (text === "재마감 요청" || text === "긴급 발주") return "bg-red-50 text-red-700 border border-red-200 font-semibold";
+  if (text === "발주 확정") return "bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold";
+  if (text === "도면 확인 단계" || text === "발주서 확인 요청") return "bg-brand-weak text-brand border border-brand/20";
+  if (text === "상판 도면 작업 중") return "bg-orange-50 text-orange-700 border border-orange-200 font-semibold";
+  return "bg-gray-100 text-gray-500";
 }
 
 /* ═══════════════════════════════════════
-   useToast
+   useToast + Toast
 ═══════════════════════════════════════ */
 function useToast() {
   const [toasts, setToasts] = useState([]);
@@ -128,561 +159,899 @@ function ToastContainer({ toasts, onRemove }) {
 }
 
 /* ═══════════════════════════════════════
-   Stepper
+   서브 컴포넌트: StatusBadge, DateCell
 ═══════════════════════════════════════ */
-function Stepper({ step }) {
+function StatusBadge({ text }) {
+  if (!text || text === "대기") return <span className="text-gray-300">-</span>;
   return (
-    <div className="flex items-center w-full">
-      {STEPS.map((label, i) => {
-        const done   = i < step;
-        const active = i === step;
-        return (
-          <React.Fragment key={i}>
-            <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black transition-all
-                ${done ? 'bg-emerald-500 text-white shadow-sm' : active ? 'bg-brand text-white shadow ring-4 ring-brand/15' : 'bg-gray-200 text-gray-400'}`}>
-                {done
-                  ? <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7"/></svg>
-                  : i + 1}
-              </div>
-              <span className={`text-xs font-semibold whitespace-nowrap ${done ? 'text-emerald-600' : active ? 'text-brand font-black' : 'text-gray-400'}`}>
-                {label}{active && <span className="ml-1 font-normal text-brand/60">(현재)</span>}
-              </span>
-            </div>
-            {i < STEPS.length - 1 && <div className={`step-line mx-2 rounded-full ${done ? 'bg-emerald-400' : 'bg-gray-200'}`} />}
-          </React.Fragment>
-        );
-      })}
+    <span className={`inline-block px-2 py-1 rounded-full text-xs whitespace-nowrap ${getCountertopStatusStyle(text)}`}>
+      {text}
+    </span>
+  );
+}
+
+function DateCell({ dateStr }) {
+  if (!dateStr) return <span className="text-gray-300">-</span>;
+  const diff = daysDiff(dateStr);
+  const urgent = diff !== null && diff <= 2;
+  let dLabel = null;
+  if (diff !== null) {
+    if (diff === 0)      dLabel = "(오늘)";
+    else if (diff < 0)   dLabel = `(D${diff})`;
+    else                  dLabel = `(D-${diff})`;
+  }
+  return (
+    <div className="flex flex-col items-center leading-snug">
+      <span className={urgent ? "text-red-600 font-semibold whitespace-nowrap" : "text-gray-700 whitespace-nowrap"}>
+        {dateStr}
+      </span>
+      {dLabel && (
+        <span className={`text-xs mt-0.5 whitespace-nowrap ${urgent ? "text-red-500 font-semibold" : "text-gray-400"}`}>
+          {dLabel}
+        </span>
+      )}
     </div>
   );
 }
 
 /* ═══════════════════════════════════════
-   Sidebar
+   ListPage — index.html 테이블 UI 매칭
 ═══════════════════════════════════════ */
-function Sidebar({ cases, activeCaseId, sidebarTab, onTabChange, onSelect }) {
-  const active    = useMemo(() => cases.filter(c => !c.archived && !c.cancelled && c.status?.sangpan !== '발주요청대기'), [cases]);
-  const archive   = useMemo(() => cases.filter(c => c.archived && !c.cancelled), [cases]);
-  const cancelled = useMemo(() => cases.filter(c => c.cancelled === true), [cases]);
-  const shown     = sidebarTab === 'archive' ? archive : sidebarTab === 'cancelled' ? cancelled : active;
+function ListPage({ cases, onSelect, onArchive, onRestore, onToast }) {
+  const [tab, setTab]                 = useState("active");
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [search, setSearch]           = useState("");
+  const [hoveredRow, setHoveredRow]   = useState(null);
+
+  const handleTabChange = (t) => { setTab(t); setSelectedIds([]); setSearch(""); };
+
+  const activeCount  = cases.filter(c => !c.archived && !c.cancelled).length;
+  const archiveCount = cases.filter(c => c.archived === true).length;
+  const cancelledCases = useMemo(() => cases.filter(c => c.cancelled === true && !c.archived), [cases]);
+
+  const tabData = useMemo(() => {
+    if (tab === "archived") return cases.filter(c => c.archived === true);
+    return cases.filter(c => !c.archived && !c.cancelled);
+  }, [cases, tab]);
+
+  const filtered = useMemo(() => {
+    if (!search) return tabData;
+    const q = search.toLowerCase();
+    return tabData.filter(c =>
+      (c.customer || "").toLowerCase().includes(q) ||
+      (c.id || "").toLowerCase().includes(q) ||
+      (c.address || "").toLowerCase().includes(q)
+    );
+  }, [tabData, search]);
+
+  /* 체크박스 */
+  const handleToggleSelect = (id) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+  const handleToggleAll = (checked) => {
+    setSelectedIds(checked ? filtered.map(c => c.id) : []);
+  };
+
+  const allSelected  = filtered.length > 0 && selectedIds.length === filtered.length;
+  const someSelected = selectedIds.length > 0 && selectedIds.length < filtered.length;
+  const headerCbRef  = useRef(null);
+  useEffect(() => {
+    if (headerCbRef.current) headerCbRef.current.indeterminate = someSelected;
+  }, [someSelected]);
+
+  const handleArchiveAction = () => {
+    if (selectedIds.length === 0) return;
+    onArchive(selectedIds);
+    setSelectedIds([]);
+    onToast({ type: 'success', title: '아카이브 완료', message: `${selectedIds.length}건이 아카이브되었습니다.` });
+  };
+  const handleRestoreAction = () => {
+    if (selectedIds.length === 0) return;
+    onRestore(selectedIds);
+    setSelectedIds([]);
+    onToast({ type: 'success', title: '복원 완료', message: `${selectedIds.length}건이 복원되었습니다.` });
+  };
+
+  /* 테이블 컬럼 정의 */
+  const colGroups = [
+    { label: "",         span: 1, cls: "bg-gray-900 border-r border-gray-700" },
+    { label: "기본 정보", span: 3, cls: "bg-gray-800" },
+    { label: "일정",      span: 1, cls: "bg-brand" },
+    { label: "공장 상태", span: 1, cls: "bg-gray-700" },
+  ];
+  const cols = [
+    { label: "",               w: "w-10"  },
+    { label: "상담 ID",        w: "w-36"  },
+    { label: "고객명",         w: "w-20"  },
+    { label: "현장 주소",      w: "w-56"  },
+    { label: "상판 예정일정",  w: "w-32"  },
+    { label: "공장 상태",      w: "w-36"  },
+  ];
 
   return (
-    <aside className="w-64 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col h-full overflow-hidden">
-      {/* 로고 */}
-      <div className="px-4 py-4 border-b border-gray-100 flex-shrink-0">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 bg-teal-700 rounded-xl flex items-center justify-center">
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7"/>
+    <div className="min-h-screen bg-[#F9FAFB] flex flex-col">
+
+      {/* ── 헤더 ── */}
+      <header className="bg-gray-900 text-white px-6 h-14 flex items-center justify-between border-b border-gray-800 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center">
+            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
             </svg>
           </div>
           <div>
-            <p className="text-xs font-black text-gray-800 leading-tight">상판 업체 포털</p>
-            <p className="text-xs text-gray-400">Countertop B2B</p>
+            <h1 className="text-sm font-semibold tracking-tight">상판 공장 포털</h1>
+            <p className="text-gray-400 text-xs">Countertop B2B · 발주 관리</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 text-sm">
+          <div className="text-gray-400 text-xs hidden sm:block">
+            오늘 <span className="text-white font-medium">{TODAY_STR}</span>
+          </div>
+        </div>
+      </header>
+
+      {/* ── 메인 컨텐츠 ── */}
+      <div className="flex-1 flex flex-col px-6 py-5 gap-4">
+
+        {/* ── 탭 ── */}
+        <div className="flex items-center">
+          <div className="flex items-center bg-white border border-gray-200 rounded-xl p-1 gap-1 shadow-sm">
+            <button onClick={() => handleTabChange("active")}
+              className={`flex items-center gap-2 px-4 h-9 rounded-lg text-sm font-semibold transition-all ${
+                tab === "active" ? "bg-gray-900 text-white shadow-sm" : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+              }`}>
+              진행 중
+              <span className={`text-xs px-2 py-0.5 rounded-full font-bold transition-colors ${
+                tab === "active" ? "bg-brand text-white" : "bg-gray-100 text-gray-500"
+              }`}>{activeCount}</span>
+            </button>
+            <button onClick={() => handleTabChange("archived")}
+              className={`flex items-center gap-2 px-4 h-9 rounded-lg text-sm font-semibold transition-all ${
+                tab === "archived" ? "bg-gray-900 text-white shadow-sm" : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+              }`}>
+              아카이브
+              <span className={`text-xs px-2 py-0.5 rounded-full font-bold transition-colors ${
+                tab === "archived" ? "bg-gray-600 text-white" : "bg-gray-100 text-gray-500"
+              }`}>{archiveCount}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* ── 테이블 컨테이너 ── */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+
+          {/* 테이블 헤더 바 */}
+          <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="font-semibold text-gray-900 text-sm">
+                  {tab === "active" ? "진행 중 현장 목록" : "아카이브 현장 목록"}
+                </h2>
+                {tab === "archived" && (
+                  <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-medium">완료 처리된 현장</span>
+                )}
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                총 <span className="font-medium text-gray-700">{filtered.length}</span>건
+                {filtered.length !== tabData.length && ` (전체 ${tabData.length}건 중 필터)`}
+                &nbsp;·&nbsp;행 클릭 시 상세 페이지로 이동해요
+              </p>
+            </div>
+          </div>
+
+          {/* 필터 바 */}
+          <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-white border-b border-gray-200">
+            <div className="relative">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+              </svg>
+              <input type="text" placeholder="고객명 / 상담ID / 주소 검색…"
+                value={search} onChange={e => setSearch(e.target.value)}
+                className="pl-9 pr-4 h-9 text-sm border border-gray-200 rounded-lg w-64 focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent bg-white"
+              />
+            </div>
+            <div className="ml-auto flex items-center gap-4 text-xs text-gray-500">
+              <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-red-500"></span>일정 임박 (D-2 이내)</span>
+              <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 bg-teal-100 border border-teal-300 rounded-full"></span>제작 진행</span>
+              <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 bg-emerald-100 border border-emerald-300 rounded-full"></span>확정/완료</span>
+            </div>
+          </div>
+
+          {/* ── 액션 바 (체크 선택 시) ── */}
+          {selectedIds.length > 0 && (
+            <div className="flex items-center justify-between px-4 py-2 bg-brand-weak border-b border-brand/20">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-semibold text-brand">
+                  {selectedIds.length}건 선택됨
+                </span>
+                {tab === "active" && (
+                  <button onClick={handleArchiveAction}
+                    className="flex items-center gap-1 text-xs font-semibold text-white bg-gray-700 hover:bg-gray-800 px-3 h-7 rounded-lg transition-colors">
+                    아카이브
+                  </button>
+                )}
+                {tab === "archived" && (
+                  <button onClick={handleRestoreAction}
+                    className="flex items-center gap-1 text-xs font-semibold text-white bg-brand hover:bg-[#0090e6] px-3 h-7 rounded-lg transition-colors">
+                    복원
+                  </button>
+                )}
+              </div>
+              <button onClick={() => setSelectedIds([])} className="text-xs text-gray-500 hover:text-gray-700 font-medium">
+                선택 해제
+              </button>
+            </div>
+          )}
+
+          {/* ── 테이블 ── */}
+          <div className="overflow-x-auto flex-1">
+            <table className="w-full border-collapse text-sm" style={{ minWidth: "800px" }}>
+              <thead className="sticky top-0 z-10">
+                {/* 컬럼 그룹 행 */}
+                <tr>
+                  {colGroups.map((g, i) => (
+                    <th key={i} colSpan={g.span}
+                      className={`${g.cls} text-white text-center py-2 text-xs font-medium tracking-wider ${i < colGroups.length - 1 ? "border-r border-white/10" : ""}`}>
+                      {g.label}
+                    </th>
+                  ))}
+                </tr>
+                {/* 컬럼 헤더 행 */}
+                <tr className="bg-gray-900 text-gray-300 text-xs">
+                  {cols.map((col, i) => (
+                    <th key={i}
+                      className={`${col.w} py-2 px-3 text-center font-medium whitespace-pre-line ${i < cols.length - 1 ? "border-r border-gray-700" : ""}`}>
+                      {i === 0 ? (
+                        <div className="flex items-center justify-center">
+                          <input ref={headerCbRef} type="checkbox" className="cb-custom"
+                            checked={allSelected} onChange={e => handleToggleAll(e.target.checked)}
+                            onClick={e => e.stopPropagation()} />
+                        </div>
+                      ) : col.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody>
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="py-20 text-center text-gray-400 bg-white">
+                      <div className="flex flex-col items-center gap-2">
+                        <svg className="w-10 h-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0H4"/>
+                        </svg>
+                        <span className="text-sm">데이터가 없어요.</span>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                {filtered.map((c, idx) => {
+                  const isSelected = selectedIds.includes(c.id);
+                  const isHovered  = hoveredRow === c.id;
+                  const base  = idx % 2 === 0 ? "bg-white" : "bg-gray-50/70";
+                  const rowBg = isSelected ? "bg-brand-weak" : isHovered ? "bg-brand-weak/50" : base;
+                  const factoryStatus = computeCountertopStatus(c);
+
+                  return (
+                    <tr key={c.id}
+                      className={`${rowBg} cursor-pointer border-b border-gray-200 transition-colors duration-75 group`}
+                      onMouseEnter={() => setHoveredRow(c.id)}
+                      onMouseLeave={() => setHoveredRow(null)}
+                      onClick={() => onSelect(c.id)}>
+
+                      {/* 체크박스 */}
+                      <td className="px-3 py-3 text-center border-r border-gray-200" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-center">
+                          <input type="checkbox" className="cb-custom" checked={isSelected}
+                            onChange={() => handleToggleSelect(c.id)} />
+                        </div>
+                      </td>
+
+                      {/* 상담ID */}
+                      <td className="px-3 py-2 text-center border-r border-gray-200">
+                        <span className="font-mono text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded">{c.id}</span>
+                      </td>
+
+                      {/* 고객명 */}
+                      <td className="px-3 py-2 text-center font-medium text-gray-900 border-r border-gray-200 whitespace-nowrap">
+                        {c.customer || "-"}
+                      </td>
+
+                      {/* 현장주소 */}
+                      <td className="px-3 py-2 text-gray-600 border-r border-gray-200 text-xs leading-relaxed break-words" title={c.address}>
+                        {c.address || "-"}
+                      </td>
+
+                      {/* 상판 예정일정 */}
+                      <td className="px-3 py-2 text-center border-r border-gray-200 border-l-2 border-l-brand/20 text-xs">
+                        <DateCell dateStr={c.schedule?.sangpan} />
+                      </td>
+
+                      {/* 공장 상태 */}
+                      <td className="px-3 py-2 text-center border-l-2 border-l-gray-300">
+                        <StatusBadge text={factoryStatus} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
 
-      {/* 탭 */}
-      <div className="px-3 py-2 border-b border-gray-100 flex gap-1 flex-shrink-0">
-        <button onClick={() => onTabChange('active')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${sidebarTab==='active' ? 'bg-brand text-white shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}>
-          진행중 <span className="opacity-75">({active.length})</span>
-        </button>
-        <button onClick={() => onTabChange('archive')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${sidebarTab==='archive' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}>
-          아카이브 <span className="opacity-75">({archive.length})</span>
-        </button>
-        <button onClick={() => onTabChange('cancelled')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${sidebarTab==='cancelled' ? 'bg-red-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}>
-          취소 {cancelled.length > 0 && <span className="opacity-75">({cancelled.length})</span>}
-        </button>
-      </div>
-
-      {/* 현장 목록 */}
-      <div className="flex-1 overflow-y-auto py-2">
-        {shown.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-40 gap-2 px-4 text-center">
-            <svg className="w-8 h-8 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0H4"/>
-            </svg>
-            <p className="text-xs text-gray-400">
-              {sidebarTab==='active' ? '배정된 현장이 없어요' : sidebarTab==='cancelled' ? '취소된 요청이 없어요' : '아카이브가 비어있어요'}
-            </p>
+      {/* ── 취소된 현장 ── */}
+      {tab === "active" && cancelledCases.length > 0 && (
+        <div className="px-6 pb-4">
+          <div className="flex items-center gap-3 my-4">
+            <div className="h-px flex-1 bg-red-100"></div>
+            <span className="text-xs font-semibold text-red-400 flex items-center gap-1">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-12.728 12.728M5.636 5.636l12.728 12.728" /></svg>
+              취소된 현장 {cancelledCases.length}건
+            </span>
+            <div className="h-px flex-1 bg-red-100"></div>
           </div>
-        ) : shown.map(c => {
-          const isActive    = c.id === activeCaseId;
-          const isCancelled = sidebarTab === 'cancelled';
-          const step        = getSangpanStep(c.status?.sangpan);
-          return (
-            <div key={c.id}
-              onClick={() => !isCancelled && onSelect(c.id)}
-              className={`mx-2 my-0.5 px-3 py-3 rounded-xl transition-all
-                ${isCancelled ? 'opacity-50 cursor-default' : isActive ? 'site-active cursor-pointer' : 'hover:bg-gray-50 cursor-pointer'}`}>
-              <div className="flex items-start justify-between gap-1 mb-1">
-                <span className="text-[10px] font-mono text-gray-400">{c.id}</span>
-                {isCancelled ? (
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border flex-shrink-0 bg-red-50 text-red-400 border-red-200">
-                    취소됨
-                  </span>
-                ) : (
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border flex-shrink-0 ${getStatusBadgeCls(c.status?.sangpan)}`}>
-                    {STEPS[step]}
-                  </span>
-                )}
-              </div>
-              <p className={`text-sm font-bold truncate ${isCancelled ? 'text-gray-400 line-through' : isActive ? 'text-brand' : 'text-gray-800'}`}>
-                {c.customer} 고객
-              </p>
-              <p className="text-xs text-gray-400 truncate mt-0.5">{shortAddr(c.address)}</p>
-              {!isCancelled && <p className="text-xs text-gray-500 mt-1.5">상판 납기: <span className="font-semibold">{c.schedule?.sangpan || '-'}</span></p>}
-            </div>
-          );
-        })}
-      </div>
+          <div className="space-y-2">
+            {cancelledCases.map(c => {
+              const cStatus = computeCountertopStatus(c);
+              return (
+                <div key={c.id} className="bg-gray-50 rounded-2xl border border-gray-200 overflow-hidden opacity-60 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs font-mono font-semibold text-gray-400">{c.id}</span>
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full border bg-red-50 text-red-400 border-red-200">취소됨</span>
+                      </div>
+                      <p className="text-sm font-bold text-gray-500 line-through">{c.customer} 고객</p>
+                      <p className="text-xs text-gray-400 truncate mt-0.5">{c.address}</p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${getCountertopStatusStyle(cStatus)}`}>{cStatus}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
-      {/* 하단 */}
-      <div className="px-4 py-3 border-t border-gray-100 bg-gray-50 flex-shrink-0">
-        <p className="text-xs font-bold text-gray-700">상판 업체 담당자</p>
-        <p className="text-xs text-gray-400 mt-0.5">상판 · 도면 관리</p>
-      </div>
-    </aside>
+      {/* ── 푸터 ── */}
+      <footer className="px-6 py-3 bg-gray-50 border-t border-gray-200 flex-shrink-0">
+        <p className="text-xs text-gray-400 text-center">
+          마지막 업데이트: {TODAY_STR} &nbsp;|&nbsp; 행 클릭 시 상세 페이지로 이동 · 상태 뱃지는 자동 계산
+        </p>
+      </footer>
+    </div>
   );
 }
 
 /* ═══════════════════════════════════════
-   OrderSheetSection  (발주서)
+   DetailPage — 요청 상세
 ═══════════════════════════════════════ */
-function OrderSheetSection({ caseData, versions, onAddVersion, onToast }) {
-  const [dragOver, setDragOver] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const fileRef = useRef(null);
-
-  const handleFile = useCallback((file) => {
-    if (!file) return;
-    const isImg = file.type.startsWith('image/');
-    const isPdf = file.type === 'application/pdf';
-    if (!isImg && !isPdf) {
-      onToast({ type: 'error', title: '파일 형식 오류', message: '이미지 또는 PDF 파일만 업로드 가능합니다.' });
-      return;
-    }
-    setUploading(true);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const vNo = versions.length + 1;
-      const now = new Date().toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit' }).replace(/\.\s*/g, '-').replace(/-$/, '');
-      onAddVersion({
-        id: `v${Date.now()}`,
-        versionNo: vNo,
-        createdAt: now,
-        imageDataUrl: isImg ? e.target.result : null,
-        imageName: file.name,
-        fileSize: file.size < 1048576 ? `${(file.size/1024).toFixed(0)} KB` : `${(file.size/1048576).toFixed(1)} MB`,
-      });
-      setUploading(false);
-      onToast({ type: 'success', title: '발주서 업로드 완료', message: `V${vNo} — ${file.name}` });
-    };
-    reader.readAsDataURL(file);
-  }, [versions, onAddVersion, onToast]);
+function DetailPage({ caseData, onBack, onToast, onUpdate }) {
+  const [lightbox, setLightbox] = useState(null);
 
   const c = caseData;
-  return (
-    <div className="space-y-4">
-      {/* 섹션 헤더 */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-black text-gray-900 flex items-center gap-2">
-          <span className="w-1.5 h-4 bg-brand rounded-full inline-block"></span>
-          발주서
-          {versions.length > 0 && (
-            <span className="ml-1 bg-brand text-white text-[10px] px-1.5 py-0.5 rounded-full">{versions.length}건</span>
-          )}
-        </h2>
-        <button onClick={() => fileRef.current?.click()}
-          className="btn-press flex items-center gap-1.5 px-3 py-1.5 bg-brand hover:bg-sky-500 text-white text-xs font-bold rounded-lg transition-colors shadow-sm">
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4"/>
-          </svg>
-          새 버전 추가
-        </button>
-      </div>
+  const versions      = c.sangpanVersions     || [];
+  const uploadedFiles = c.sangpanUploadedFiles || {};
+  const sangpanDrawingVersions   = c.sangpanDrawingVersions         || [];
+  const submittedVers = versions.filter(v => !v.isNew);
+  const factoryStatus = computeCountertopStatus(c);
 
-      {/* ① 실측 자료 */}
-      <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4">
-        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
-          </svg>
-          실측 자료
-        </h3>
-        <div className="grid grid-cols-2 gap-2 mb-3">
-          <div className="bg-white rounded-xl border border-gray-100 px-3 py-2.5">
-            <p className="text-[11px] text-gray-400 font-medium">실측 일정</p>
-            <p className="text-sm font-bold text-gray-800 mt-0.5">{c.schedule?.silcheuk || '미정'}</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-100 px-3 py-2.5">
-            <p className="text-[11px] text-gray-400 font-medium">실측 상태</p>
-            <p className={`text-sm font-bold mt-0.5 ${(c.status?.silcheuk||'').includes('완료') ? 'text-emerald-600' : 'text-amber-600'}`}>
-              {c.status?.silcheuk || '-'}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 text-xs text-gray-400 bg-white border border-dashed border-gray-200 rounded-xl px-3 py-2.5">
-          <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-          </svg>
-          <span>실측 사진 및 실측지는 관리자 상세 탭에서 업로드 후 연동됩니다</span>
-        </div>
-      </div>
+  /* ── 공장 확인 토글 ── */
+  const handleFactoryCheck = (versionNo) => {
+    const newVersions = versions.map(v =>
+      v.versionNo === versionNo ? { ...v, factoryChecked: !v.factoryChecked } : v
+    );
+    const updated = { ...c, sangpanVersions: newVersions };
+    onUpdate(updated);
+    const ver = newVersions.find(v => v.versionNo === versionNo);
+    onToast({
+      type: ver.factoryChecked ? 'success' : 'info',
+      title: ver.factoryChecked ? '공장 확인 완료' : '공장 확인 해제',
+      message: `발주 V${versionNo} ${ver.factoryChecked ? '확인되었습니다' : '확인이 해제되었습니다'}`,
+    });
+  };
 
-      {/* ② 발주서 이미지 */}
-      <div className="bg-white border border-gray-200 rounded-2xl p-4">
-        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-          </svg>
-          발주서 이미지
-        </h3>
+  /* ── 제작 진행 시작 ── */
+  const handleStartProduction = () => {
+    const now = new Date().toISOString();
+    const updated = {
+      ...c,
+      sangpanProductionStarted: true,
+      sangpanProductionStartedAt: now,
+      status: { ...(c.status || {}), sangpan: "제작진행" },
+    };
+    onUpdate(updated);
+    onToast({ type: 'success', title: '🏭 제작 진행 시작', message: '공장 제작이 시작되었습니다. 본사에 자동 통보됩니다.' });
+  };
 
-        {/* 버전 목록 */}
-        {versions.length > 0 && (
-          <div className="space-y-2 mb-3">
-            {[...versions].reverse().map((v, idx) => (
-              <div key={v.id} className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${idx===0 ? 'border-brand/30 bg-brand-weak' : 'border-gray-100 bg-gray-50'}`}>
-                {v.imageDataUrl ? (
-                  <img src={v.imageDataUrl} alt="발주서" className="img-thumb" />
-                ) : (
-                  <div className="img-thumb bg-gray-100 flex items-center justify-center">
-                    <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                    </svg>
-                  </div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${idx===0 ? 'bg-brand text-white' : 'bg-gray-200 text-gray-500'}`}>
-                      V{v.versionNo}
-                    </span>
-                    {idx===0 && <span className="text-[10px] text-brand font-semibold">최신</span>}
-                  </div>
-                  <p className="text-xs font-semibold text-gray-800 truncate">{v.imageName}</p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">{v.createdAt} · {v.fileSize}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+  /* ── 제작 진행 중단 ── */
+  const handleStopProduction = () => {
+    const updated = {
+      ...c,
+      sangpanProductionStarted: false,
+      sangpanProductionStartedAt: null,
+      status: { ...(c.status || {}), sangpan: "발주확정" },
+    };
+    onUpdate(updated);
+    onToast({ type: 'info', title: '제작 진행 중단', message: '제작이 중단되었습니다. 발주 확정 상태로 복원됩니다.' });
+  };
 
-        {/* 업로드 존 */}
-        <input ref={fileRef} type="file" className="hidden" accept="image/*,.pdf"
-          onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0]); e.target.value = ''; }} />
-        <div
-          onDrop={e => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); }}
-          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onClick={() => !uploading && fileRef.current?.click()}
-          className={`border-2 border-dashed rounded-xl flex flex-col items-center justify-center gap-2 cursor-pointer transition-all py-6 select-none ${
-            dragOver ? 'drop-active' : uploading ? 'border-brand/30 bg-brand-weak' : 'border-gray-200 hover:border-brand hover:bg-brand-weak/40'
-          }`}>
-          {uploading ? (
-            <>
-              <svg className="w-6 h-6 text-brand animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-              </svg>
-              <p className="text-xs text-brand font-semibold">업로드 중…</p>
-            </>
-          ) : (
-            <>
-              <svg className="w-7 h-7 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-              </svg>
-              <p className="text-sm text-gray-500 font-medium">{versions.length === 0 ? '발주서 이미지를 업로드하세요' : '새 버전 이미지 추가'}</p>
-              <p className="text-xs text-gray-400">이미지 · PDF · 드래그&드롭 지원</p>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
+  /* ── 상판 도면 파일 업로드 (canvas 리사이즈 → 스테이징 → 발송) ── */
+  const cadFileRef = useRef(null);
+  const [cadDragOver, setCadDragOver] = useState(false);
+  const [cadUploading, setCadUploading] = useState(false);
+  const [stagedCad, setStagedCad] = useState(null);
 
-/* ═══════════════════════════════════════
-   SchemaUploadSection  (상판 도면)
-═══════════════════════════════════════ */
-function SchemaUploadSection({ schemaVersions, onAddSchema, onToast }) {
-  const [dragOver, setDragOver] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const fileRef = useRef(null);
-
-  const handleFile = useCallback((file) => {
+  const handleCadFile = useCallback(async (file) => {
     if (!file) return;
-    setUploading(true);
-    setTimeout(() => {
-      const vNo = schemaVersions.length + 1;
-      const now = new Date().toLocaleString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
-      onAddSchema({
-        id: `schema-${Date.now()}`, versionNo: vNo, uploadedAt: now,
-        fileName: file.name,
-        fileSize: file.size < 1048576 ? `${(file.size/1024).toFixed(0)} KB` : `${(file.size/1048576).toFixed(1)} MB`,
-        status: '검토 대기',
-      });
-      setUploading(false);
-      onToast({ type: 'success', title: '도면 업로드 완료', message: `${file.name} — 본사 검토 요청 전송됨` });
-    }, 700);
-  }, [schemaVersions, onAddSchema, onToast]);
-
-  return (
-    <div className="space-y-3">
-      <h2 className="text-sm font-black text-gray-900 flex items-center gap-2">
-        <span className="w-1.5 h-4 bg-gray-400 rounded-full inline-block"></span>
-        상판 도면 업로드
-      </h2>
-      {schemaVersions.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden divide-y divide-gray-100">
-          {[...schemaVersions].reverse().map((v, idx) => (
-            <div key={v.id} className="flex items-center gap-3 px-4 py-3">
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-xs font-black ${idx===0 ? 'bg-brand text-white' : 'bg-gray-100 text-gray-500'}`}>
-                V{v.versionNo}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-800 truncate">{v.fileName}</p>
-                <p className="text-xs text-gray-400">{v.uploadedAt} · {v.fileSize}</p>
-              </div>
-              <span className={`text-xs font-semibold px-2 py-1 rounded-full border ${
-                v.status==='승인' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
-                v.status==='반려' ? 'bg-red-100 text-red-700 border-red-200' :
-                'bg-amber-100 text-amber-700 border-amber-200'
-              }`}>{v.status}</span>
-            </div>
-          ))}
-        </div>
-      )}
-      <input ref={fileRef} type="file" className="hidden" accept=".dwg,.dxf,.pdf,.png,.jpg,.jpeg"
-        onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0]); e.target.value = ''; }} />
-      <div
-        onDrop={e => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); }}
-        onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-        onDragLeave={() => setDragOver(false)}
-        onClick={() => !uploading && fileRef.current?.click()}
-        className={`border-2 border-dashed rounded-xl flex flex-col items-center justify-center gap-2 cursor-pointer transition-all py-6 select-none ${
-          dragOver ? 'drop-active' : 'border-gray-200 hover:border-brand hover:bg-brand-weak/40'
-        }`}>
-        <svg className="w-7 h-7 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-        </svg>
-        <p className="text-sm text-gray-500 font-medium">{uploading ? '업로드 중…' : '상판 도면 파일 업로드'}</p>
-        <p className="text-xs text-gray-400">.DWG · .DXF · .PDF · .PNG</p>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════
-   FeedbackChatSection  (피드백 채팅)
-═══════════════════════════════════════ */
-function FeedbackChatSection({ messages, onAddMessage }) {
-  const [text, setText] = useState('');
-  const bottomRef = useRef(null);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  const handleSend = useCallback(() => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
+    setCadUploading(true);
+    const isImg = file.type.startsWith("image/");
+    const sizeStr = file.size < 1048576 ? `${(file.size/1024).toFixed(0)} KB` : `${(file.size/1048576).toFixed(1)} MB`;
     const now = new Date().toLocaleString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
-    onAddMessage({ id: `msg-${Date.now()}`, sender: '업체', text: trimmed, sentAt: now });
-    setText('');
-  }, [text, onAddMessage]);
+    const vNo = sangpanDrawingVersions.length + 1;
 
-  return (
-    <div className="space-y-3">
-      <h2 className="text-sm font-black text-gray-900 flex items-center gap-2">
-        <span className="w-1.5 h-4 bg-teal-400 rounded-full inline-block"></span>
-        피드백 채팅
-        {messages.length > 0 && (
-          <span className="ml-1 bg-teal-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{messages.length}</span>
-        )}
-      </h2>
-      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-        {/* 메시지 목록 */}
-        <div className="p-4 space-y-3 max-h-64 overflow-y-auto">
-          {messages.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-4">아직 메시지가 없어요. 도면 관련 피드백을 남겨주세요.</p>
-          ) : (
-            messages.map(m => (
-              <div key={m.id} className={`flex ${m.sender === '업체' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[75%] rounded-2xl px-3.5 py-2.5 ${
-                  m.sender === '업체'
-                    ? 'bg-brand text-white rounded-br-sm'
-                    : 'bg-gray-100 text-gray-800 rounded-bl-sm'
-                }`}>
-                  {m.sender !== '업체' && (
-                    <p className="text-[10px] font-bold mb-0.5 opacity-70">{m.sender}</p>
-                  )}
-                  <p className="text-sm leading-relaxed">{m.text}</p>
-                  <p className={`text-[10px] mt-1 ${m.sender === '업체' ? 'text-white/60 text-right' : 'text-gray-400'}`}>{m.sentAt}</p>
-                </div>
-              </div>
-            ))
-          )}
-          <div ref={bottomRef} />
-        </div>
-        {/* 입력창 */}
-        <div className="border-t border-gray-100 p-3 flex items-end gap-2">
-          <textarea
-            value={text}
-            onChange={e => setText(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-            placeholder="피드백 메시지를 입력하세요… (Enter로 전송)"
-            rows={2}
-            className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand placeholder-gray-300 bg-gray-50"
-          />
-          <button onClick={handleSend}
-            className="btn-press flex-shrink-0 w-9 h-9 bg-brand hover:bg-sky-500 text-white rounded-xl flex items-center justify-center transition-colors shadow-sm">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 12h14M12 5l7 7-7 7"/>
-            </svg>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+    let previewUrl = null;
+    if (isImg) {
+      previewUrl = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const img = new Image();
+          img.onload = () => {
+            const MAX = 900;
+            let { width, height } = img;
+            if (width > MAX || height > MAX) {
+              if (width >= height) { height = Math.round(height * MAX / width); width = MAX; }
+              else                 { width  = Math.round(width  * MAX / height); height = MAX; }
+            }
+            const canvas = document.createElement("canvas");
+            canvas.width = width; canvas.height = height;
+            canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL("image/jpeg", 0.75));
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
 
-/* ═══════════════════════════════════════
-   RemakeSection
-═══════════════════════════════════════ */
-function RemakeSection({ claims }) {
-  const pending = claims.filter(c => c.status !== '완료');
-  return (
-    <div className="space-y-3">
-      <h2 className="text-sm font-black text-gray-900 flex items-center gap-2">
-        <span className="w-1.5 h-4 bg-red-400 rounded-full inline-block"></span>
-        재마감 요청
-        {pending.length > 0 && (
-          <span className="ml-1 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{pending.length}</span>
-        )}
-      </h2>
-      {claims.length === 0 ? (
-        <div className="bg-gray-50 border border-dashed border-gray-200 rounded-xl flex items-center justify-center py-8">
-          <p className="text-xs text-gray-400">재마감 요청이 없습니다</p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {claims.map(c => (
-            <div key={c.id} className="bg-white border border-gray-200 rounded-xl p-3.5 anim-in">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1.5">
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${c.urgency==='긴급' ? 'bg-red-100 text-red-700 border-red-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>{c.urgency}</span>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${c.status==='완료' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>{c.status}</span>
-                </div>
-                <span className="text-[10px] text-gray-400">{c.reportedAt}</span>
-              </div>
-              <p className="text-sm font-semibold text-gray-800">{c.issue}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{c.location}</p>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+    const newCad = { versionNo: vNo, uploadedAt: now, fileName: file.name, fileSize: sizeStr, status: "도면검토중", previewUrl };
+    setStagedCad(newCad);
+    setCadUploading(false);
+    onToast({ type: 'info', title: '상판 도면 파일 준비 완료', message: `${file.name} — "발송" 버튼을 눌러 본사에 전달하세요.` });
+  }, [sangpanDrawingVersions, onToast]);
 
-/* ═══════════════════════════════════════
-   DetailView
-═══════════════════════════════════════ */
-function DetailView({ caseData, extData, onUpdate, onToast }) {
-  const step = getSangpanStep(caseData.status?.sangpan);
-  const orderVersions  = extData.orderVersions  || [];
-  const schemaVersions = extData.schemaVersions || [];
-  const remakeClaims   = extData.remakeClaims   || [];
-  const chatMessages   = extData.chatMessages   || [];
+  const handleCadSend = useCallback(() => {
+    if (!stagedCad) return;
+    const updated = { ...c, sangpanDrawingVersions: [...sangpanDrawingVersions, stagedCad] };
+    onUpdate(updated);
+    setStagedCad(null);
+    onToast({ type: 'success', title: '상판 도면 발송 완료', message: `${stagedCad.fileName} — 본사 검토 요청이 전송되었습니다.` });
+  }, [c, sangpanDrawingVersions, stagedCad, onUpdate, onToast]);
+
+  const handleCadCancel = useCallback(() => {
+    setStagedCad(null);
+    onToast({ type: 'info', title: '업로드 취소', message: '상판 도면 파일 업로드가 취소되었습니다.' });
+  }, [onToast]);
+
+  /* ── 실측 자료 ── */
+  const silcheukResult = c.silcheukUploadResult || null;
+  const silcheukImages = [
+    ...(silcheukResult?.drawings || []).map(f => ({ ...f, category: "도면" })),
+    ...(silcheukResult?.photos   || []).map(f => ({ ...f, category: "사진" })),
+  ];
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* 현장 헤더 */}
-      <div className="bg-gray-900 text-white px-6 py-4 flex-shrink-0">
+      {/* 헤더 */}
+      <header className="bg-gray-900 text-white px-6 py-4 flex-shrink-0">
         <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-xs font-mono text-gray-400">{caseData.id}</span>
-              <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${getStatusBadgeCls(caseData.status?.sangpan)}`}>
-                {caseData.status?.sangpan || '-'}
-              </span>
+          <div className="flex items-center gap-4">
+            <button onClick={onBack}
+              className="flex items-center gap-1.5 text-gray-400 hover:text-white text-sm transition-colors px-2 py-1 rounded-lg hover:bg-white/10">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              목록
+            </button>
+            <div className="w-px h-8 bg-gray-700"></div>
+            <div>
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-xs font-mono text-gray-400">{c.id}</span>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${getCountertopStatusStyle(factoryStatus)}`}>
+                  {factoryStatus}
+                </span>
+              </div>
+              <h1 className="text-lg font-black leading-snug">{c.customer || '신규'} 고객 현장</h1>
+              <p className="text-sm text-gray-300 mt-0.5">{c.address || '-'}</p>
             </div>
-            <h1 className="text-lg font-black leading-snug">{caseData.customer} 고객 현장</h1>
-            <p className="text-sm text-gray-300 mt-0.5 leading-snug">{caseData.address}</p>
           </div>
           <div className="text-right flex-shrink-0">
             <p className="text-[11px] text-gray-400 uppercase tracking-wide">상판 납기</p>
-            <p className="text-sm font-bold">{caseData.schedule?.sangpan || '-'}</p>
+            <p className="text-sm font-bold">{c.schedule?.sangpan || '-'}</p>
             <p className="text-[11px] text-gray-400 uppercase tracking-wide mt-2">담당자</p>
-            <p className="text-sm font-semibold text-gray-200">{caseData.manager}</p>
+            <p className="text-sm font-semibold text-gray-200">{c.manager || '-'}</p>
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* 스테퍼 */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0">
-        <Stepper step={step} />
+      {/* ── 제작 진행 제어 바 ── */}
+      <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-semibold text-gray-500">제작 상태</span>
+          <span className={`text-xs font-bold px-3 py-1 rounded-full ${getCountertopStatusStyle(factoryStatus)}`}>
+            {factoryStatus}
+          </span>
+          {c.sangpanProductionStarted && c.sangpanProductionStartedAt && (
+            <span className="text-[10px] text-gray-400">
+              시작: {new Date(c.sangpanProductionStartedAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {!c.sangpanProductionStarted ? (
+            <button onClick={handleStartProduction}
+              disabled={!c.sangpanConfirmedAt}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-bold rounded-lg transition-all shadow-sm ${
+                c.sangpanConfirmedAt
+                  ? 'bg-teal-600 hover:bg-teal-700 text-white active:scale-95'
+                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              }`}>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
+              제작 진행
+            </button>
+          ) : (
+            <button onClick={handleStopProduction}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm font-bold rounded-lg transition-all shadow-sm active:scale-95">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"/></svg>
+              제작 진행 중단
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 스크롤 영역 */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-6 py-6 space-y-8">
-          {/* 발주서 */}
-          <OrderSheetSection
-            caseData={caseData}
-            versions={orderVersions}
-            onAddVersion={v => onUpdate({ orderVersions: [...orderVersions, v] })}
-            onToast={onToast}
-          />
-          <div className="border-t border-gray-100" />
-          {/* 상판 도면 */}
-          <SchemaUploadSection
-            schemaVersions={schemaVersions}
-            onAddSchema={v => onUpdate({ schemaVersions: [...schemaVersions, v] })}
-            onToast={onToast}
-          />
-          <div className="border-t border-gray-100" />
-          {/* 피드백 채팅 */}
-          <FeedbackChatSection
-            messages={chatMessages}
-            onAddMessage={m => onUpdate({ chatMessages: [...chatMessages, m] })}
-          />
-          <div className="border-t border-gray-100" />
-          {/* 재마감 */}
-          <RemakeSection claims={remakeClaims} />
-          <div className="h-8" />
+      <div className="flex-1 overflow-y-auto bg-gray-50">
+        <div className="max-w-4xl mx-auto px-6 py-6 space-y-6">
+
+          {/* ═══ 섹션 1: 발주 서류 (Read-Only) ═══ */}
+          <section className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-brand flex items-center justify-center">
+                  <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-gray-800">발주 서류</h2>
+                  <p className="text-xs text-gray-400">본사에서 전달된 발주서 · 공장 확인</p>
+                </div>
+              </div>
+              {submittedVers.length > 0 && (
+                <span className="bg-brand text-white text-[10px] font-black px-2 py-0.5 rounded-full">{submittedVers.length}건</span>
+              )}
+            </div>
+
+            <div className="p-5">
+              {submittedVers.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 gap-2 text-gray-300">
+                  <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                  </svg>
+                  <p className="text-sm font-medium text-gray-400">아직 전달된 발주서가 없습니다</p>
+                  <p className="text-xs">본사 관리자가 발주서를 제출하면 여기에 표시됩니다.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {[...submittedVers].reverse().map((v, idx) => {
+                    const files = uploadedFiles[v.versionNo] || [];
+                    const images = files.filter(f => f.isImage);
+                    return (
+                      <div key={v.versionNo} className={`rounded-xl border p-4 ${idx === 0 ? 'border-brand/30 bg-brand-weak/30' : 'border-gray-100 bg-gray-50/50'}`}>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs font-black px-2 py-0.5 rounded-full ${idx === 0 ? 'bg-brand text-white' : 'bg-gray-200 text-gray-500'}`}>
+                              V{v.versionNo}
+                            </span>
+                            {idx === 0 && <span className="text-[10px] text-brand font-semibold">최신</span>}
+                            <span className="text-xs text-gray-400">{v.sentAt}</span>
+                          </div>
+                          <button onClick={() => handleFactoryCheck(v.versionNo)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all active:scale-95 ${
+                              v.factoryChecked
+                                ? 'bg-emerald-500 text-white shadow-sm hover:bg-emerald-600'
+                                : 'bg-white border border-gray-200 text-gray-600 hover:border-brand hover:text-brand'
+                            }`}>
+                            {v.factoryChecked ? (
+                              <><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>공장 확인됨</>
+                            ) : '공장 확인'}
+                          </button>
+                        </div>
+                        {v.sangpanDate && (
+                          <div className="flex items-center gap-2 mb-3 bg-white rounded-lg px-3 py-2 border border-gray-100">
+                            <svg className="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <rect x="3" y="4" width="18" height="18" rx="2" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M16 2v4M8 2v4M3 10h18"/>
+                            </svg>
+                            <span className="text-xs text-gray-500">상판 예정 일정:</span>
+                            <span className="text-xs font-bold text-gray-800">{v.sangpanDate}</span>
+                          </div>
+                        )}
+                        {v.memo && (
+                          <div className="mb-3 bg-white rounded-lg px-3 py-2 border border-gray-100">
+                            <p className="text-xs text-gray-500">{v.memo}</p>
+                          </div>
+                        )}
+                        {images.length > 0 && (
+                          <div className="grid grid-cols-4 gap-2">
+                            {images.map(f => (
+                              <div key={f.id} className="relative cursor-pointer group" onClick={() => setLightbox({ url: f.url, name: f.name })}>
+                                <img src={f.url} alt={f.name} className="w-full aspect-square object-cover rounded-lg border border-gray-200 group-hover:ring-2 group-hover:ring-brand transition-all" />
+                                {f.url && (
+                                  <a href={f.url} download={f.name} onClick={e => e.stopPropagation()}
+                                    className="absolute top-1 right-1 w-6 h-6 bg-black/50 hover:bg-black/70 text-white rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                    title="다운로드">
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                    </svg>
+                                  </a>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {files.filter(f => !f.isImage).length > 0 && (
+                          <div className="mt-2 space-y-1">
+                            {files.filter(f => !f.isImage).map(f => (
+                              <div key={f.id} className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-gray-100">
+                                <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                </svg>
+                                <span className="text-xs text-gray-600 truncate">{f.name}</span>
+                                <span className="text-[10px] text-gray-400 flex-shrink-0">{f.size}</span>
+                                {f.url && (
+                                  <a href={f.url} download={f.name}
+                                    className="ml-auto flex-shrink-0 text-gray-400 hover:text-brand transition-colors"
+                                    title="다운로드">
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                    </svg>
+                                  </a>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* ═══ 섹션 2: 실측 자료 (Read-Only) ═══ */}
+          <section className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100">
+              <div className="w-7 h-7 rounded-lg bg-emerald-500 flex items-center justify-center">
+                <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-gray-800">실측 자료</h2>
+                <p className="text-xs text-gray-400">실측 사진 · 실측지 · 일정</p>
+              </div>
+            </div>
+            <div className="p-5">
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="bg-gray-50 rounded-xl px-4 py-3 border border-gray-100">
+                  <p className="text-[11px] text-gray-400 font-medium">실측 일정</p>
+                  <p className="text-sm font-bold text-gray-800 mt-0.5">{c.schedule?.silcheuk || '미정'}</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl px-4 py-3 border border-gray-100">
+                  <p className="text-[11px] text-gray-400 font-medium">실측 상태</p>
+                  <p className={`text-sm font-bold mt-0.5 ${(c.status?.silcheuk||'').includes('완료') ? 'text-emerald-600' : 'text-amber-600'}`}>
+                    {c.status?.silcheuk || '-'}
+                  </p>
+                </div>
+              </div>
+              {silcheukImages.length > 0 ? (
+                <div className="grid grid-cols-4 gap-2">
+                  {silcheukImages.map((f, i) => (
+                    <div key={i} className="relative cursor-pointer group" onClick={() => f.url && setLightbox({ url: f.url, name: f.name })}>
+                      {f.url ? (
+                        <img src={f.url} alt={f.name} className="w-full aspect-square object-cover rounded-lg border border-gray-200 group-hover:ring-2 group-hover:ring-emerald-400 transition-all" />
+                      ) : (
+                        <div className="w-full aspect-square bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
+                          <svg className="w-6 h-6 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                          </svg>
+                        </div>
+                      )}
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[9px] px-1.5 py-0.5 rounded-b-lg truncate">
+                        {f.category} · {f.name}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-xs text-gray-400 bg-gray-50 border border-dashed border-gray-200 rounded-xl px-4 py-4">
+                  <svg className="w-5 h-5 text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                  </svg>
+                  <span>아직 실측 자료가 업로드되지 않았습니다</span>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* ═══ 섹션 3: 상판 도면 업로드 ═══ */}
+          <section className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-orange-500 flex items-center justify-center">
+                  <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-gray-800">상판 도면</h2>
+                  <p className="text-xs text-gray-400">도면 업로드 · 본사 검토 연동</p>
+                </div>
+              </div>
+              {sangpanDrawingVersions.length > 0 && (
+                <span className="bg-orange-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">{sangpanDrawingVersions.length}건</span>
+              )}
+            </div>
+            <div className="p-5 space-y-4">
+              {sangpanDrawingVersions.length > 0 && (
+                <div className="space-y-2">
+                  {[...sangpanDrawingVersions].reverse().map((v, idx) => {
+                    const cadStatusCls = {
+                      "승인": "bg-emerald-100 text-emerald-700 border-emerald-200",
+                      "도면수정요청": "bg-orange-100 text-orange-700 border-orange-200",
+                      "도면검토중": "bg-brand-weak text-brand border-brand/20",
+                    };
+                    return (
+                      <div key={v.versionNo} className={`rounded-xl border px-4 py-3 ${idx === 0 ? 'border-orange-200 bg-orange-50/50' : 'border-gray-100 bg-gray-50/50'}`}>
+                        <div className="flex items-center gap-3">
+                          {v.previewUrl ? (
+                            <img src={v.previewUrl} alt={`도면 V${v.versionNo}`}
+                              className="img-thumb cursor-pointer hover:ring-2 hover:ring-orange-400 transition-all"
+                              onClick={() => setLightbox({ url: v.previewUrl, name: v.fileName })} />
+                          ) : (
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-xs font-black ${idx === 0 ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-500'}`}>
+                              V{v.versionNo}
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${idx === 0 ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-500'}`}>V{v.versionNo}</span>
+                              {idx === 0 && <span className="text-[10px] text-orange-600 font-semibold">최신</span>}
+                            </div>
+                            <p className="text-xs font-semibold text-gray-800 truncate">{v.fileName}</p>
+                            <p className="text-[10px] text-gray-400">{v.uploadedAt} · {v.fileSize}</p>
+                          </div>
+                          <span className={`text-xs font-semibold px-2 py-1 rounded-full border flex-shrink-0 ${cadStatusCls[v.status] || 'bg-amber-100 text-amber-700 border-amber-200'}`}>
+                            {v.status}
+                          </span>
+                        </div>
+                        {v.revisionNote && (
+                          <div className="mt-2 flex items-start gap-2 bg-orange-100 border border-orange-200 rounded-lg px-3 py-2">
+                            <svg className="w-3.5 h-3.5 text-orange-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                            <div>
+                              <p className="text-[10px] font-bold text-orange-700">본사 수정 요청</p>
+                              <p className="text-xs text-orange-900 leading-relaxed mt-0.5">{v.revisionNote}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* 발송 대기 중인 상판 도면 */}
+              {stagedCad && (
+                <div className="border-2 border-orange-300 bg-orange-50 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-orange-700 bg-orange-200 px-2 py-0.5 rounded-full">발송 대기</span>
+                    <span className="text-xs text-gray-500">아래 "발송" 버튼을 눌러야 본사에 전달됩니다</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {stagedCad.previewUrl ? (
+                      <img src={stagedCad.previewUrl} alt="Preview"
+                        className="img-thumb cursor-pointer hover:ring-2 hover:ring-orange-400 transition-all"
+                        onClick={() => setLightbox({ url: stagedCad.previewUrl, name: stagedCad.fileName })} />
+                    ) : (
+                      <div className="w-8 h-8 rounded-lg bg-orange-500 text-white flex items-center justify-center text-xs font-black flex-shrink-0">
+                        V{stagedCad.versionNo}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-gray-800 truncate">{stagedCad.fileName}</p>
+                      <p className="text-[10px] text-gray-400">{stagedCad.uploadedAt} · {stagedCad.fileSize}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={handleCadSend}
+                      className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-bold bg-orange-500 hover:bg-orange-600 text-white transition-all shadow-sm active:scale-95">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                      </svg>
+                      발송
+                    </button>
+                    <button onClick={handleCadCancel}
+                      className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-semibold border border-gray-300 text-gray-600 hover:bg-gray-50 transition-all">
+                      취소
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <input ref={cadFileRef} type="file" className="hidden" accept=".dwg,.dxf,.pdf,.png,.jpg,.jpeg"
+                onChange={e => { if (e.target.files[0]) handleCadFile(e.target.files[0]); e.target.value = ''; }} />
+              <div
+                onDrop={e => { e.preventDefault(); setCadDragOver(false); if (!stagedCad && e.dataTransfer.files[0]) handleCadFile(e.dataTransfer.files[0]); }}
+                onDragOver={e => { e.preventDefault(); if (!stagedCad) setCadDragOver(true); }}
+                onDragLeave={() => setCadDragOver(false)}
+                onClick={() => !cadUploading && !stagedCad && cadFileRef.current?.click()}
+                className={`border-2 border-dashed rounded-xl flex flex-col items-center justify-center gap-2 transition-all py-8 select-none ${
+                  stagedCad ? 'border-gray-100 bg-gray-50 cursor-not-allowed opacity-50' :
+                  cadDragOver ? 'drop-active cursor-pointer' : cadUploading ? 'border-orange-300 bg-orange-50 cursor-pointer' : 'border-gray-200 hover:border-orange-400 hover:bg-orange-50/40 cursor-pointer'
+                }`}>
+                {cadUploading ? (
+                  <>
+                    <svg className="w-6 h-6 text-orange-500 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    <p className="text-xs text-orange-600 font-semibold">업로드 중…</p>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                    </svg>
+                    <p className="text-sm text-gray-500 font-medium">상판 도면 파일을 업로드하세요</p>
+                    <p className="text-xs text-gray-400">.DWG · .DXF · .PDF · .PNG · 드래그&드롭 지원</p>
+                  </>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <div className="h-8"></div>
         </div>
       </div>
-    </div>
-  );
-}
 
-/* ═══════════════════════════════════════
-   EmptyState
-═══════════════════════════════════════ */
-function EmptyState({ hasAnyCases }) {
-  return (
-    <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-8">
-      <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center">
-        <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 12h16M4 18h7"/>
-        </svg>
-      </div>
-      {hasAnyCases ? (
-        <>
-          <p className="text-base font-bold text-gray-700">현장을 선택하세요</p>
-          <p className="text-sm text-gray-400">왼쪽 목록에서 현장을 클릭하면 상세 정보를 확인할 수 있어요.</p>
-        </>
-      ) : (
-        <>
-          <p className="text-base font-bold text-gray-700">배정된 현장이 없어요</p>
-          <p className="text-sm text-gray-400">본사에서 발주 요청이 접수되면 여기에 나타납니다.</p>
-        </>
+      {/* ── 라이트박스 ── */}
+      {lightbox && (
+        <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-8"
+             onClick={() => setLightbox(null)}>
+          <div className="relative flex flex-col items-center max-w-full max-h-full" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setLightbox(null)}
+              className="absolute -top-3 -right-3 w-8 h-8 bg-white/20 hover:bg-white/40 rounded-full flex items-center justify-center text-white transition-colors z-10">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <img src={lightbox.url} alt={lightbox.name}
+              className="max-w-full rounded-xl object-contain shadow-2xl"
+              style={{ maxHeight: "80vh" }} />
+            <div className="mt-3 flex items-center gap-4 w-full px-1">
+              <p className="flex-1 text-white/70 text-sm truncate">{lightbox.name}</p>
+              <span className="flex-shrink-0 text-xs text-white/40 bg-white/10 px-2 py-1 rounded">ESC로 닫기</span>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -693,51 +1062,72 @@ function EmptyState({ hasAnyCases }) {
 ═══════════════════════════════════════ */
 function App() {
   const [cases, setCases]           = useState([]);
-  const [sidebarTab, setSidebarTab] = useState('active');
+  const [view, setView]             = useState('list');
   const [selectedId, setSelectedId] = useState(null);
-  const [extStore, setExtStore]     = useState({});
   const { toasts, add: addToast, remove: removeToast } = useToast();
 
+  useEffect(() => { setCases(loadCases()); }, []);
+
+  /* cross-tab 동기화 */
   useEffect(() => {
-    const loaded = loadCases();
-    setCases(loaded);
-    setExtStore(loadSangpanStore());
-    // 첫 번째 진행중 현장 자동 선택
-    const active = loaded.filter(c => !c.archived && c.status?.sangpan !== '발주요청대기');
-    if (active.length > 0) setSelectedId(active[0].id);
+    const refresh = () => setCases(loadCases());
+    const onStorage = (e) => { if (e.key === LS_KEY) refresh(); };
+    const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
+    window.addEventListener('storage', onStorage);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
-  const handleUpdate = useCallback((caseId, updates) => {
-    setExtStore(prev => {
-      const next = { ...prev, [caseId]: { ...(prev[caseId] || {}), ...updates } };
-      saveSangpanStore(next);
+  /* ESC → 목록으로 */
+  useEffect(() => {
+    const fn = (e) => { if (e.key === 'Escape' && view === 'detail') setView('list'); };
+    document.addEventListener('keydown', fn);
+    return () => document.removeEventListener('keydown', fn);
+  }, [view]);
+
+  const handleArchive = useCallback((ids) => {
+    setCases(prev => {
+      const next = prev.map(c => ids.includes(c.id) ? { ...c, archived: true } : c);
+      try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+
+  const handleRestore = useCallback((ids) => {
+    setCases(prev => {
+      const next = prev.map(c => ids.includes(c.id) ? { ...c, archived: false } : c);
+      try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+
+  const handleBack = useCallback(() => { setView('list'); setSelectedId(null); }, []);
+  const handleSelect = useCallback((id) => { setSelectedId(id); setView('detail'); }, []);
+
+  const handleUpdateCase = useCallback((updated) => {
+    setCases(prev => {
+      const next = prev.map(c => c.id === updated.id ? updated : c);
+      try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch {}
       return next;
     });
   }, []);
 
   const selectedCase = cases.find(c => c.id === selectedId);
-  const hasActive    = cases.some(c => !c.archived && c.status?.sangpan !== '발주요청대기');
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-100">
-      <Sidebar
-        cases={cases}
-        activeCaseId={selectedId}
-        sidebarTab={sidebarTab}
-        onTabChange={setSidebarTab}
-        onSelect={setSelectedId}
-      />
-      <main className="flex-1 overflow-hidden flex flex-col">
-        {selectedCase
-          ? <DetailView
-              caseData={selectedCase}
-              extData={extStore[selectedCase.id] || {}}
-              onUpdate={updates => handleUpdate(selectedCase.id, updates)}
-              onToast={addToast}
-            />
-          : <EmptyState hasAnyCases={hasActive} />
-        }
-      </main>
+    <div className="h-screen overflow-hidden bg-gray-100 flex flex-col">
+      {view === 'list' ? (
+        <ListPage cases={cases} onSelect={handleSelect} onArchive={handleArchive} onRestore={handleRestore} onToast={addToast} />
+      ) : selectedCase ? (
+        <DetailPage caseData={selectedCase} onBack={handleBack} onToast={addToast} onUpdate={handleUpdateCase} />
+      ) : (
+        <div className="flex items-center justify-center h-full">
+          <button onClick={handleBack} className="text-brand text-sm font-bold">← 목록으로 돌아가기</button>
+        </div>
+      )}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
   );

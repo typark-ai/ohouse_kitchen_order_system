@@ -100,6 +100,26 @@
     .sheet-backdrop { animation: fadeIn 0.2s ease-out; }
     @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
 
+    .cb-custom {
+      appearance: none; -webkit-appearance: none;
+      width: 16px; height: 16px;
+      border: 1.5px solid #D1D5DB; border-radius: 4px;
+      background: #fff; cursor: pointer; position: relative;
+      transition: all 0.1s; flex-shrink: 0;
+    }
+    .cb-custom:checked { background: #00A1FF; border-color: #00A1FF; }
+    .cb-custom:checked::after {
+      content: ''; position: absolute; left: 3px; top: 0px;
+      width: 5px; height: 9px;
+      border: 2px solid #fff; border-top: none; border-left: none;
+      transform: rotate(45deg);
+    }
+    .cb-custom:indeterminate { background: #00A1FF; border-color: #00A1FF; }
+    .cb-custom:indeterminate::after {
+      content: ''; position: absolute; left: 3px; top: 6px;
+      width: 8px; height: 0; border-top: 2px solid #fff;
+    }
+
     .check-path {
       stroke-dasharray: 30;
       stroke-dashoffset: 30;
@@ -131,6 +151,16 @@ function saveEngResponse(caseId, response) {
     const idx = items.findIndex(c => c.id === caseId);
     if (idx === -1) return;
     items[idx] = { ...items[idx], silcheukEngResponse: response };
+    localStorage.setItem(LS_CASES, JSON.stringify(items));
+  } catch(e) {}
+}
+function saveUploadResult(caseId, result) {
+  try {
+    const raw = localStorage.getItem(LS_CASES);
+    const items = raw ? JSON.parse(raw) : [];
+    const idx = items.findIndex(c => c.id === caseId);
+    if (idx === -1) return;
+    items[idx] = { ...items[idx], silcheukUploadResult: result };
     localStorage.setItem(LS_CASES, JSON.stringify(items));
   } catch(e) {}
 }
@@ -171,6 +201,7 @@ function mapToSite(c) {
     manager:   c.manager ? `${c.manager} (영업)` : "",
     status:    silcheukStatus,
     cancelled: c.cancelled === true,
+    archived:  c.archived  === true,
     proposals,
     /* 관리자가 고객 안내 전달 완료 시 채워짐 */
     finalized:  c.silcheukFinalized  || false,
@@ -710,13 +741,42 @@ function ScheduleSection({ proposals, caseId, onToast, finalized, finalDate, fin
 function UploadCard({ icon, label, sublabel, color, files, onAdd, onRemove, accept, multiple = true, locked = false }) {
   const inputRef = useRef(null);
 
-  const handleInput = (e) => {
-    const newFiles = Array.from(e.target.files).map(f => ({
-      id: Date.now() + Math.random(),
-      name: f.name,
-      url: URL.createObjectURL(f),
-      isImage: f.type.startsWith("image/"),
-    }));
+  /* 이미지: canvas로 최대 900px 리사이즈 후 JPEG 75% 저장 (localStorage 용량 초과 방지)
+     비이미지(PDF/DWG 등): url=null, 메타데이터만 저장 */
+  const handleInput = async (e) => {
+    const files = Array.from(e.target.files);
+    const toStorable = (f) => new Promise((resolve) => {
+      if (!f.type.startsWith("image/")) {
+        resolve({ id: Date.now() + Math.random(), name: f.name, url: null, isImage: false, size: f.size });
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX = 900;
+          let { width, height } = img;
+          if (width > MAX || height > MAX) {
+            if (width >= height) { height = Math.round(height * MAX / width); width = MAX; }
+            else                 { width  = Math.round(width  * MAX / height); height = MAX; }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+          resolve({
+            id:      Date.now() + Math.random(),
+            name:    f.name,
+            url:     canvas.toDataURL("image/jpeg", 0.75),
+            isImage: true,
+            size:    f.size,
+          });
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(f);
+    });
+    const newFiles = await Promise.all(files.map(toStorable));
     onAdd(newFiles);
     e.target.value = "";
   };
@@ -793,7 +853,7 @@ function UploadCard({ icon, label, sublabel, color, files, onAdd, onRemove, acce
 /* ═══════════════════════════════════════
    SECTION 3 — 실측 결과 업로드
 ═══════════════════════════════════════ */
-function UploadSection({ onToast, siteStatus, finalized }) {
+function UploadSection({ onToast, siteStatus, finalized, caseId }) {
   const [drawings, setDrawings] = useState([]);
   const [photos, setPhotos]     = useState([]);
   const [memo, setMemo]           = useState("");
@@ -809,6 +869,14 @@ function UploadSection({ onToast, siteStatus, finalized }) {
   const handleSubmit = () => {
     if (!canSubmit) return;
     setSubmitting(true);
+    /* localStorage에 업로드 결과 저장 → detail.html SectionResult에서 표시 */
+    const result = {
+      drawings:    drawings.map(f => ({ id: f.id, name: f.name, url: f.url, isImage: f.isImage })),
+      photos:      photos.map(f => ({ id: f.id, name: f.name, url: f.url, isImage: f.isImage })),
+      memo,
+      submittedAt: new Date().toISOString(),
+    };
+    if (caseId) saveUploadResult(caseId, result);
     setTimeout(() => {
       setSubmitting(false);
       setSubmitted(true);
@@ -991,108 +1059,247 @@ function UploadSection({ onToast, siteStatus, finalized }) {
 /* ═══════════════════════════════════════
    SITE LIST VIEW
 ═══════════════════════════════════════ */
-function SiteListView({ sites, cancelledSites = [], onSelect }) {
+function SiteListView({ sites, cancelledSites = [], archivedSites = [], onSelect, onArchive, onRestore, onToast }) {
+  const [tab, setTab] = useState("active");
+  const [selectedIds, setSelectedIds] = useState([]);
+
+  const handleTabChange = (t) => { setTab(t); setSelectedIds([]); };
+  const toggleSelect = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  /* 진행 중 탭: 활성 사이트 + 취소된 사이트를 합쳐서 체크박스 표시 */
+  const allActiveSites = useMemo(() => [...sites, ...cancelledSites], [sites, cancelledSites]);
   const todayCount = sites.filter(s => s.status === "실측예정" || s.status === "일정조율중").length;
+
+  const handleArchiveAction = () => {
+    if (selectedIds.length === 0) return;
+    onArchive(selectedIds);
+    onToast({ type: 'success', title: '아카이빙 완료', message: `${selectedIds.length}건이 아카이브로 이동했습니다.` });
+    setSelectedIds([]);
+  };
+  const handleRestoreAction = () => {
+    if (selectedIds.length === 0) return;
+    onRestore(selectedIds);
+    onToast({ type: 'success', title: '복구 완료', message: `${selectedIds.length}건이 진행 중으로 복구되었습니다.` });
+    setSelectedIds([]);
+  };
+
   return (
     <div className="overflow-y-auto pb-4">
-      <div className="px-4 pt-4 pb-2 flex items-center justify-between">
-        <p className="text-xs text-gray-500 font-semibold">
-          총 {sites.length}개 현장
-          {todayCount > 0 && (
-            <span className="ml-2 bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">
-              일정 조율 {todayCount}건
-            </span>
-          )}
-        </p>
+      {/* ── 탭 바 ── */}
+      <div className="px-4 pt-3 pb-1 flex items-center gap-1 border-b border-gray-100">
+        <button
+          onClick={() => handleTabChange("active")}
+          className={`px-3 py-2 text-xs font-bold rounded-lg transition-colors ${
+            tab === "active" ? "bg-gray-900 text-white" : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+          }`}>
+          진행 중 {(sites.length + cancelledSites.length) > 0 && <span className="ml-1 opacity-70">({sites.length + cancelledSites.length})</span>}
+        </button>
+        <button
+          onClick={() => handleTabChange("archived")}
+          className={`px-3 py-2 text-xs font-bold rounded-lg transition-colors ${
+            tab === "archived" ? "bg-gray-900 text-white" : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+          }`}>
+          아카이브 {archivedSites.length > 0 && <span className="ml-1 opacity-70">({archivedSites.length})</span>}
+        </button>
       </div>
-      {sites.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 gap-3 px-8">
-          <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center">
-            <svg className="w-7 h-7 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-            </svg>
+
+      {/* ── 진행 중 탭 ── */}
+      {tab === "active" && (
+        <>
+          <div className="px-4 pt-3 pb-2 flex items-center justify-between">
+            <p className="text-xs text-gray-500 font-semibold">
+              총 {sites.length}개 현장
+              {todayCount > 0 && (
+                <span className="ml-2 bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">
+                  일정 조율 {todayCount}건
+                </span>
+              )}
+            </p>
           </div>
-          <p className="text-sm font-semibold text-gray-400">배정된 현장이 없어요</p>
-          <p className="text-xs text-gray-300 text-center leading-relaxed">
-            본사에서 현장을 등록하면<br/>여기에 표시됩니다
-          </p>
-        </div>
-      ) : (
-        <div className="px-4 space-y-3">
-          {sites.map(site => (
-            <button
-              key={site.caseId}
-              onClick={() => onSelect(site)}
-              className="w-full text-left bg-white rounded-2xl border border-gray-200 shadow-sm active:scale-[0.98] transition-transform overflow-hidden"
-            >
-              <div className="px-4 py-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className="text-xs font-mono font-semibold text-gray-400">{site.caseId}</span>
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${SITE_STATUS_STYLES[site.status] || SITE_STATUS_STYLES["대기"]}`}>
-                        {site.status}
-                      </span>
-                    </div>
-                    <p className="text-sm font-bold text-gray-900 mb-1">{site.customer} 고객</p>
-                    <p className="text-xs text-gray-500 truncate">{site.address}</p>
-                  </div>
-                  <svg className="w-5 h-5 text-gray-300 flex-shrink-0 mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </div>
-                <div className="mt-3 flex items-center gap-2 text-xs text-gray-400 border-t border-gray-100 pt-3">
-                  <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <span>{site.proposals[0]?.label || "일정 미정"}</span>
-                  {site.proposals.length > 1 && (
-                    <span className="text-gray-300">외 {site.proposals.length - 1}안</span>
-                  )}
-                </div>
+
+          {allActiveSites.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-3 px-8">
+              <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center">
+                <svg className="w-7 h-7 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                </svg>
               </div>
-            </button>
-          ))}
-        </div>
+              <p className="text-sm font-semibold text-gray-400">배정된 현장이 없어요</p>
+              <p className="text-xs text-gray-300 text-center leading-relaxed">
+                본사에서 현장을 등록하면<br/>여기에 표시됩니다
+              </p>
+            </div>
+          ) : (
+            <div className="px-4 space-y-3">
+              {/* 활성 사이트 */}
+              {sites.map(site => (
+                <div key={site.caseId} className="flex items-start gap-2">
+                  <div className="pt-5 pl-1 flex-shrink-0">
+                    <input type="checkbox" className="cb-custom"
+                      checked={selectedIds.includes(site.caseId)}
+                      onChange={() => toggleSelect(site.caseId)} />
+                  </div>
+                  <button
+                    onClick={() => onSelect(site)}
+                    className="flex-1 text-left bg-white rounded-2xl border border-gray-200 shadow-sm active:scale-[0.98] transition-transform overflow-hidden"
+                  >
+                    <div className="px-4 py-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className="text-xs font-mono font-semibold text-gray-400">{site.caseId}</span>
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${SITE_STATUS_STYLES[site.status] || SITE_STATUS_STYLES["대기"]}`}>
+                              {site.status}
+                            </span>
+                          </div>
+                          <p className="text-sm font-bold text-gray-900 mb-1">{site.customer} 고객</p>
+                          <p className="text-xs text-gray-500 truncate">{site.address}</p>
+                        </div>
+                        <svg className="w-5 h-5 text-gray-300 flex-shrink-0 mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                      <div className="mt-3 flex items-center gap-2 text-xs text-gray-400 border-t border-gray-100 pt-3">
+                        <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <span>{site.proposals[0]?.label || "일정 미정"}</span>
+                        {site.proposals.length > 1 && (
+                          <span className="text-gray-300">외 {site.proposals.length - 1}안</span>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              ))}
+
+              {/* 취소된 현장 */}
+              {cancelledSites.length > 0 && (
+                <>
+                  <div className="flex items-center gap-2 mt-3 mb-1">
+                    <div className="h-px flex-1 bg-red-100"></div>
+                    <span className="text-xs font-semibold text-red-400 flex items-center gap-1.5">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                      </svg>
+                      취소된 요청 {cancelledSites.length}건
+                    </span>
+                    <div className="h-px flex-1 bg-red-100"></div>
+                  </div>
+                  {cancelledSites.map(site => (
+                    <div key={site.caseId} className="flex items-start gap-2">
+                      <div className="pt-4 pl-1 flex-shrink-0">
+                        <input type="checkbox" className="cb-custom"
+                          checked={selectedIds.includes(site.caseId)}
+                          onChange={() => toggleSelect(site.caseId)} />
+                      </div>
+                      <div className="flex-1 bg-gray-50 rounded-2xl border border-gray-200 overflow-hidden opacity-60">
+                        <div className="px-4 py-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-xs font-mono font-semibold text-gray-400">{site.caseId}</span>
+                                <span className="text-xs font-semibold px-2 py-0.5 rounded-full border bg-red-50 text-red-400 border-red-200">취소됨</span>
+                              </div>
+                              <p className="text-sm font-bold text-gray-500 line-through">{site.customer} 고객</p>
+                              <p className="text-xs text-gray-400 truncate mt-0.5">{site.address}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+        </>
       )}
 
-      {/* 취소된 현장 섹션 */}
-      {cancelledSites.length > 0 && (
-        <div className="px-4 mt-5">
-          <div className="flex items-center gap-2 mb-2.5">
-            <div className="h-px flex-1 bg-red-100"></div>
-            <span className="text-xs font-semibold text-red-400 flex items-center gap-1.5">
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-              </svg>
-              취소된 요청 {cancelledSites.length}건
-            </span>
-            <div className="h-px flex-1 bg-red-100"></div>
-          </div>
-          <div className="space-y-2">
-            {cancelledSites.map(site => (
-              <div
-                key={site.caseId}
-                className="w-full text-left bg-gray-50 rounded-2xl border border-gray-200 overflow-hidden opacity-60"
-              >
-                <div className="px-4 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-mono font-semibold text-gray-400">{site.caseId}</span>
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full border bg-red-50 text-red-400 border-red-200">
-                          취소됨
-                        </span>
+      {/* ── 아카이브 탭 ── */}
+      {tab === "archived" && (
+        <>
+          {archivedSites.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-3 px-8">
+              <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center">
+                <svg className="w-7 h-7 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+                </svg>
+              </div>
+              <p className="text-sm font-semibold text-gray-400">아카이브가 비어있어요</p>
+              <p className="text-xs text-gray-300 text-center leading-relaxed">
+                진행 중 탭에서 현장을 선택하여<br/>아카이브할 수 있습니다
+              </p>
+            </div>
+          ) : (
+            <div className="px-4 pt-3 space-y-3">
+              {archivedSites.map(site => (
+                <div key={site.caseId} className="flex items-start gap-2">
+                  <div className="pt-4 pl-1 flex-shrink-0">
+                    <input type="checkbox" className="cb-custom"
+                      checked={selectedIds.includes(site.caseId)}
+                      onChange={() => toggleSelect(site.caseId)} />
+                  </div>
+                  <div className={`flex-1 rounded-2xl border overflow-hidden ${
+                    site.cancelled
+                      ? 'bg-gray-50 border-gray-200 opacity-60'
+                      : 'bg-white border-gray-200 shadow-sm'
+                  }`}>
+                    <div className="px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-mono font-semibold text-gray-400">{site.caseId}</span>
+                            {site.cancelled ? (
+                              <span className="text-xs font-semibold px-2 py-0.5 rounded-full border bg-red-50 text-red-400 border-red-200">취소됨</span>
+                            ) : (
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${SITE_STATUS_STYLES[site.status] || SITE_STATUS_STYLES["대기"]}`}>
+                                {site.status}
+                              </span>
+                            )}
+                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full border bg-gray-100 text-gray-400 border-gray-200">아카이브</span>
+                          </div>
+                          <p className={`text-sm font-bold mb-1 ${site.cancelled ? 'text-gray-500 line-through' : 'text-gray-900'}`}>{site.customer} 고객</p>
+                          <p className="text-xs text-gray-400 truncate mt-0.5">{site.address}</p>
+                        </div>
                       </div>
-                      <p className="text-sm font-bold text-gray-500 line-through">{site.customer} 고객</p>
-                      <p className="text-xs text-gray-400 truncate mt-0.5">{site.address}</p>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── 하단 액션 바 ── */}
+      {selectedIds.length > 0 && (
+        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] bg-white border-t border-gray-200 shadow-lg px-4 py-3 z-50 flex items-center justify-between">
+          <span className="text-xs font-semibold text-gray-600">{selectedIds.length}건 선택됨</span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setSelectedIds([])}
+              className="px-3 py-2 text-xs font-semibold text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+              선택 해제
+            </button>
+            {tab === "active" ? (
+              <button onClick={handleArchiveAction}
+                className="px-4 py-2 text-xs font-bold text-white bg-gray-700 rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+                </svg>
+                아카이빙
+              </button>
+            ) : (
+              <button onClick={handleRestoreAction}
+                className="px-4 py-2 text-xs font-bold text-white bg-brand rounded-lg hover:bg-brand-dark transition-colors flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                복구
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -1106,6 +1313,20 @@ function SiteListView({ sites, cancelledSites = [], onSelect }) {
 function App() {
   const { toasts, add: addToast, remove: removeToast } = useToast();
   const [selectedSite, setSelectedSite] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  /* cross-tab 동기화 — 다른 탭에서 데이터 변경 시 자동 갱신 */
+  useEffect(() => {
+    const bump = () => setRefreshKey(k => k + 1);
+    const onStorage = (e) => { if (e.key === LS_CASES) bump(); };
+    const onVisible = () => { if (document.visibilityState === 'visible') bump(); };
+    window.addEventListener('storage', onStorage);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
 
   /* localStorage에서 로드 → 실측 관련 케이스 필터 (취소됨 별도 분리) */
   const allSilcheukCases = useMemo(() =>
@@ -1116,10 +1337,32 @@ function App() {
         (c.status?.silcheuk && c.status.silcheuk !== "발주요청대기" && c.status.silcheuk !== "실측 요청 대기")
       )
       .map(mapToSite),
-    []
+    [refreshKey]
   );
   const sites          = useMemo(() => allSilcheukCases.filter(s => !s.cancelled && !s.archived), [allSilcheukCases]);
-  const cancelledSites = useMemo(() => allSilcheukCases.filter(s => s.cancelled), [allSilcheukCases]);
+  const cancelledSites = useMemo(() => allSilcheukCases.filter(s => s.cancelled && !s.archived), [allSilcheukCases]);
+  const archivedSites  = useMemo(() => allSilcheukCases.filter(s => s.archived), [allSilcheukCases]);
+
+  /* 아카이빙 / 복구 */
+  const handleArchive = useCallback((caseIds) => {
+    try {
+      const raw = localStorage.getItem(LS_CASES);
+      const items = raw ? JSON.parse(raw) : [];
+      const updated = items.map(c => caseIds.includes(c.id) ? { ...c, archived: true } : c);
+      localStorage.setItem(LS_CASES, JSON.stringify(updated));
+      setRefreshKey(k => k + 1);
+    } catch {}
+  }, []);
+
+  const handleRestore = useCallback((caseIds) => {
+    try {
+      const raw = localStorage.getItem(LS_CASES);
+      const items = raw ? JSON.parse(raw) : [];
+      const updated = items.map(c => caseIds.includes(c.id) ? { ...c, archived: false } : c);
+      localStorage.setItem(LS_CASES, JSON.stringify(updated));
+      setRefreshKey(k => k + 1);
+    } catch {}
+  }, []);
 
   const engineerName = "현장 기사";
 
@@ -1183,10 +1426,18 @@ function App() {
             <div className="flex-1 h-px bg-gray-200"></div>
           </div>
 
-          <UploadSection onToast={addToast} siteStatus={selectedSite.status} finalized={selectedSite.finalized} />
+          <UploadSection onToast={addToast} siteStatus={selectedSite.status} finalized={selectedSite.finalized} caseId={selectedSite.caseId} />
         </div>
       ) : (
-        <SiteListView sites={sites} cancelledSites={cancelledSites} onSelect={setSelectedSite} />
+        <SiteListView
+          sites={sites}
+          cancelledSites={cancelledSites}
+          archivedSites={archivedSites}
+          onSelect={setSelectedSite}
+          onArchive={handleArchive}
+          onRestore={handleRestore}
+          onToast={addToast}
+        />
       )}
 
       <ToastStack toasts={toasts} onRemove={removeToast} />

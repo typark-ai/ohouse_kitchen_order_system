@@ -136,6 +136,9 @@ function getBadgeStyle(text) {
   if (t.includes("확정") || t.includes("완료") || t.includes("확인"))
     return "bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold";
 
+  if (t.includes("제작진행"))
+    return "bg-teal-50 text-teal-700 border border-teal-200 font-semibold";
+
   if (t.includes("진행") || t.includes("검토"))
     return "bg-brand-weak text-brand border border-brand/20";
 

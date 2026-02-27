@@ -234,7 +234,7 @@ const MOKDAE_STATUS_OPTS   = ["발주요청대기","CAD도면검토중","발주�
 const GIGI_STATUS_OPTS     = ["발주요청대기","발주요청완료","발주확정","발주요청반려","재마감확정","확정후조정(긴급)"];
 const SANGPAN_STATUS_OPTS  = ["발주요청대기","상판도면검토중","발주요청완료","발주확정","발주요청반려","재마감확정","상판도면수정요청"];
 
-function LeftPanel({ data, onSave, isNew, scheduleEditable, silcheukFinalDate }) {
+function LeftPanel({ data, onSave, isNew, silcheukFinalDate, mokdaeFinalDate }) {
   const [form, setForm] = useState({
     id:       data.id || "",
     manager:  data.manager || "",
@@ -288,9 +288,18 @@ function LeftPanel({ data, onSave, isNew, scheduleEditable, silcheukFinalDate })
     }
   }, [silcheukFinalDate]);
 
+  /* 목대 발주서 공장 승인 시 mokdaeFinalDate가 채워지면 form에 자동 반영 */
+  useEffect(() => {
+    setForm(prev => ({ ...prev, schedule: { ...prev.schedule, mokdae: mokdaeFinalDate || "" } }));
+  }, [mokdaeFinalDate]);
+
   const handleChange   = (k, v)  => { setForm(prev => ({ ...prev, [k]: v })); setSaved(false); };
   const handleSchedule = (k, v)  => { setForm(prev => ({ ...prev, schedule: { ...prev.schedule, [k]: v } })); setSaved(false); };
   const handleStatus   = (k, v)  => { setForm(prev => ({ ...prev, status:   { ...prev.status,   [k]: v } })); setSaved(false); };
+
+  /* 날짜 입력 제한: 오늘 이전 불가 + 기기/상판은 실측 일정 이후만 가능 */
+  const today = new Date().toISOString().slice(0, 10);
+  const minScheduleDate = silcheukFinalDate && silcheukFinalDate > today ? silcheukFinalDate : today;
 
   /* 신규 현장 모드: 5개 필수 항목이 모두 입력되어야 저장 가능 */
   const requiredFilled = !isNew || (
@@ -452,10 +461,10 @@ function LeftPanel({ data, onSave, isNew, scheduleEditable, silcheukFinalDate })
             공정 일정
           </p>
 
-          {/* 실측 일정: 실측 탭 최종 확정 일정 자동 반영 (항상 읽기 전용) */}
+          {/* 실측 일정: 실측 탭 최종 확정 일정 자동 반영 (read-only, 데이터 기반 표시) */}
           <div className="flex items-center gap-3">
             <span className="text-xs text-gray-500 font-semibold w-8 flex-shrink-0">실측</span>
-            {!scheduleEditable ? (
+            {!silcheukFinalDate ? (
               <div className="flex-1 flex items-center gap-2 px-2 py-1.5 bg-gray-100 border border-gray-100 rounded-lg">
                 <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
@@ -472,9 +481,28 @@ function LeftPanel({ data, onSave, isNew, scheduleEditable, silcheukFinalDate })
             )}
           </div>
 
-          {/* 목대/기기/상판 일정: 자유 편집 */}
+          {/* 목대 일정: 발주서 공장 승인 후 자동 입력 (read-only) */}
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-500 font-semibold w-8 flex-shrink-0">목대</span>
+            {!mokdaeFinalDate ? (
+              <div className="flex-1 flex items-center gap-2 px-2 py-1.5 bg-gray-100 border border-gray-100 rounded-lg">
+                <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                <span className="text-xs text-gray-400">발주서 공장 승인 후 자동 입력</span>
+              </div>
+            ) : (
+              <input
+                type="date"
+                value={form.schedule.mokdae}
+                disabled
+                className="flex-1 px-2 py-1.5 text-xs border border-gray-100 rounded-lg bg-gray-50 text-gray-500 cursor-default"
+              />
+            )}
+          </div>
+
+          {/* 기기/상판 일정: 오늘 이전 불가 + 실측 일정 이후만 가능 */}
           {[
-            { key: "mokdae",  label: "목대" },
             { key: "gigi",    label: "기기" },
             { key: "sangpan", label: "상판" },
           ].map(({ key, label }) => (
@@ -483,6 +511,7 @@ function LeftPanel({ data, onSave, isNew, scheduleEditable, silcheukFinalDate })
               <input
                 type="date"
                 value={form.schedule[key]}
+                min={minScheduleDate}
                 onChange={e => handleSchedule(key, e.target.value)}
                 className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand bg-white text-gray-700"
               />
@@ -532,7 +561,10 @@ function LeftPanel({ data, onSave, isNew, scheduleEditable, silcheukFinalDate })
 ═══════════════════════════════════════════════════════ */
 let nextId = 3;
 
-function SectionSchedule({ data, onToast, onScheduleUnlock, onStatusChange, onProposalsSend, onFinalConfirm }) {
+function SectionSchedule({ data, onToast, onScheduleUnlock, onStatusChange, onProposalsSend, onFinalConfirm, resultDone }) {
+  /* 날짜 입력 제한: 오늘 이전 불가 */
+  const today = new Date().toISOString().slice(0, 10);
+
   /* ── Step 1: 고객 희망 일정 ── */
   const [proposals, setProposals] = useState(
     data.proposals && data.proposals.length > 0
@@ -544,9 +576,11 @@ function SectionSchedule({ data, onToast, onScheduleUnlock, onStatusChange, onPr
   /* ── Step 2: 기사 응답 (engineer.html에서 localStorage로 수신) ── */
   const engResponse = data.engResponse || null; // { type:"accepted"|"counter", date, time, counterProposals:[{date,time}] }
 
-  /* ── Step 3: 최종 확정 ── */
-  const [finalStatus, setFinalStatus]               = useState("waiting");
-  const [selectedScheduleKey, setSelectedScheduleKey] = useState("");
+  /* ── Step 3: 최종 확정 — localStorage에서 복원 (페이지 리로드 시 휘발 방지) ── */
+  const [finalStatus, setFinalStatus]               = useState(data.finalized ? "done" : "waiting");
+  const [selectedScheduleKey, setSelectedScheduleKey] = useState(
+    data.finalized && data.finalDate ? `${data.finalDate}|${data.finalTime}` : ""
+  );
 
   /* scheduleOptions: 기사 응답 기반 선택 가능 일정 */
   const scheduleOptions = (() => {
@@ -607,14 +641,17 @@ function SectionSchedule({ data, onToast, onScheduleUnlock, onStatusChange, onPr
   };
 
   /* ── 실측 상태 뱃지 ── */
+  /* resultDone(검수 완료)가 최우선 — 리마운트 시 "실측 예정"이 "완료"를 덮어쓰는 버그 방지 */
   const scheduleStatus =
-    finalStatus === "done" ? "실측 예정"
-    : (sent && proposals.length > 0) ? "일정 조율중"
+    resultDone                              ? "완료"
+    : finalStatus === "done"               ? "실측 예정"
+    : (sent && proposals.length > 0)       ? "일정 조율중"
     : "실측 요청 대기";
   const scheduleStatusStyle = {
     "실측 요청 대기": "bg-gray-100 text-gray-500 border border-gray-200",
     "일정 조율중":    "bg-amber-100 text-amber-700 border border-amber-200",
     "실측 예정":      "bg-brand-weak text-brand border border-brand/20",
+    "완료":           "bg-emerald-100 text-emerald-700 border border-emerald-200",
   }[scheduleStatus] || "bg-gray-100 text-gray-500 border border-gray-200";
 
   /* 실측 상태 변경 시 부모에 알림 → 대시보드 자동 연동 */
@@ -652,20 +689,32 @@ function SectionSchedule({ data, onToast, onScheduleUnlock, onStatusChange, onPr
         </div>
 
         <div className="px-4 py-4 space-y-2.5">
+          {/* 최종 확정(고객 전달) 완료 시 입력 비활성화 */}
+          {finalStatus === "done" && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg mb-1">
+              <svg className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              <span className="text-xs text-emerald-700 font-medium">최종 일정이 확정되어 수정할 수 없습니다</span>
+            </div>
+          )}
           {proposals.map((p, idx) => (
             <div key={p.id} className="flex items-center gap-2">
               <span className="text-xs font-medium text-gray-400 w-7 text-center">{idx + 1}안</span>
               <input
                 type="date" value={p.date}
+                min={today}
+                disabled={finalStatus === "done"}
                 onChange={e => updateProposal(p.id, "date", e.target.value)}
-                className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand text-gray-700 bg-white"
+                className={`flex-1 px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand text-gray-700 ${finalStatus === "done" ? "bg-gray-50 border-gray-100 cursor-default" : "border-gray-300 bg-white"}`}
               />
               <input
                 type="time" value={p.time}
+                disabled={finalStatus === "done"}
                 onChange={e => updateProposal(p.id, "time", e.target.value)}
-                className="w-28 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand text-gray-700 bg-white"
+                className={`w-28 px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-brand text-gray-700 ${finalStatus === "done" ? "bg-gray-50 border-gray-100 cursor-default" : "border-gray-300 bg-white"}`}
               />
-              {proposals.length > 1 && (
+              {proposals.length > 1 && finalStatus !== "done" && (
                 <button onClick={() => removeProposal(p.id)}
                   className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -675,22 +724,26 @@ function SectionSchedule({ data, onToast, onScheduleUnlock, onStatusChange, onPr
               )}
             </div>
           ))}
-          <button onClick={addProposal}
-            className="flex items-center gap-2 text-xs text-brand hover:text-[#0090e6] font-medium px-2 py-1.5 rounded-lg hover:bg-brand-weak transition-colors mt-1">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-            </svg>
-            일정 안 추가
-          </button>
+          {finalStatus !== "done" && (
+            <button onClick={addProposal}
+              className="flex items-center gap-2 text-xs text-brand hover:text-[#0090e6] font-medium px-2 py-1.5 rounded-lg hover:bg-brand-weak transition-colors mt-1">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+              </svg>
+              일정 안 추가
+            </button>
+          )}
         </div>
 
         <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex justify-end gap-2">
           <button onClick={handleReset}
-            className="px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700 border border-gray-300 rounded-lg hover:bg-white transition-colors">
+            disabled={finalStatus === "done"}
+            className={`px-3 py-1.5 text-xs font-medium border rounded-lg transition-colors ${finalStatus === "done" ? "text-gray-300 border-gray-200 cursor-not-allowed" : "text-gray-500 hover:text-gray-700 border-gray-300 hover:bg-white"}`}>
             초기화
           </button>
           <button onClick={handleSend}
-            className="px-4 py-1.5 text-xs font-semibold text-white bg-brand hover:bg-[#0090e6] rounded-lg transition-colors flex items-center gap-2 shadow-sm">
+            disabled={finalStatus === "done"}
+            className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 shadow-sm ${finalStatus === "done" ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "text-white bg-brand hover:bg-[#0090e6]"}`}>
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
             </svg>
@@ -922,12 +975,24 @@ function SectionSchedule({ data, onToast, onScheduleUnlock, onStatusChange, onPr
 /* ═══════════════════════════════════════════════════════
    SECTION B — 실측 결과
 ═══════════════════════════════════════════════════════ */
-function SectionResult({ data, onToast }) {
+function SectionResult({ data, onToast, onConfirm }) {
   const [isDone, setIsDone] = useState(data.isDone);
   const [selectedImg, setSelectedImg] = useState(null);
 
+  /* 업로드 시각 포맷 */
+  const fmtSubmittedAt = (iso) => {
+    if (!iso) return null;
+    try {
+      const d = new Date(iso);
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    } catch { return null; }
+  };
+  const submittedLabel = fmtSubmittedAt(data.submittedAt);
+  const hasImages = data.images && data.images.length > 0;
+
   const handleConfirm = () => {
     setIsDone(true);
+    onConfirm?.(); // localStorage 저장 + status.silcheuk → "완료" 처리
     onToast({
       type: "success",
       title: "대시보드 상태 변경",
@@ -960,30 +1025,53 @@ function SectionResult({ data, onToast }) {
                 d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
             <span className="text-sm font-semibold text-gray-700">실측지 및 현장 사진</span>
-            <span className="text-xs text-gray-400">({data.images.length}장 · 클릭하면 확대)</span>
+            {hasImages && <span className="text-xs text-gray-400">({data.images.length}장 · 클릭하면 확대)</span>}
           </div>
-          <span className="text-xs text-gray-400">업로드: 최현장 기사 · 2026-03-03 11:42</span>
+          {submittedLabel && (
+            <span className="text-xs text-gray-400">업로드: {submittedLabel}</span>
+          )}
         </div>
 
-        <div className="p-4 grid grid-cols-4 gap-3">
-          {data.images.map(img => (
-            <div
-              key={img.id}
-              className="thumb-wrap relative aspect-[4/3] rounded-lg overflow-hidden cursor-zoom-in group border border-gray-200"
-              onClick={() => setSelectedImg(img)}
-            >
-              <img
-                src={img.url}
-                alt={img.label}
-                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                loading="lazy"
-              />
-              <div className="thumb-overlay absolute inset-0 bg-gray-900/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-end">
-                <p className="text-white text-xs font-medium p-2 w-full truncate">{img.label}</p>
+        {hasImages ? (
+          <div className="p-4 grid grid-cols-4 gap-3">
+            {data.images.map(img => (
+              <div
+                key={img.id}
+                className="thumb-wrap relative aspect-[4/3] rounded-lg overflow-hidden cursor-zoom-in group border border-gray-200"
+                onClick={() => setSelectedImg(img)}
+              >
+                {img.isImage ? (
+                  <img
+                    src={img.url}
+                    alt={img.label}
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gray-100 flex flex-col items-center justify-center gap-1 p-2">
+                    <svg className="w-7 h-7 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    <p className="text-xs text-gray-500 truncate w-full text-center">{img.name}</p>
+                  </div>
+                )}
+                <div className="thumb-overlay absolute inset-0 bg-gray-900/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-end">
+                  <p className="text-white text-xs font-medium p-2 w-full truncate">{img.label}</p>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-8 flex flex-col items-center gap-2 text-center">
+            <svg className="w-10 h-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+            </svg>
+            <p className="text-sm text-gray-400 font-medium">아직 업로드된 자료가 없습니다</p>
+            <p className="text-xs text-gray-300">기사가 실측 결과를 업로드하면 여기에 표시됩니다.</p>
+          </div>
+        )}
       </div>
 
       {/* 실측 메모 */}
@@ -997,9 +1085,13 @@ function SectionResult({ data, onToast }) {
           <span className="text-xs text-gray-400">(기사 작성 · Read-only)</span>
         </div>
         <div className="px-4 py-4">
-          <pre className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap font-sans bg-gray-50 rounded-lg p-4 border border-gray-100">
-            {data.memo}
-          </pre>
+          {data.memo ? (
+            <pre className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap font-sans bg-gray-50 rounded-lg p-4 border border-gray-100">
+              {data.memo}
+            </pre>
+          ) : (
+            <p className="text-sm text-gray-300 italic">메모 없음</p>
+          )}
         </div>
       </div>
 
@@ -1101,6 +1193,9 @@ function MokdaeStatusBadge({ status, large = false }) {
     "재마감요청":       { cls: "bg-orange-100 text-orange-700 border-orange-200",        dot: "bg-orange-500" },
     "재마감조정":       { cls: "bg-amber-100 text-amber-700 border-amber-200",           dot: "bg-amber-500" },
     "재마감확정":       { cls: "bg-emerald-100 text-emerald-700 border-emerald-200",     dot: "bg-emerald-500" },
+    "제작진행":         { cls: "bg-teal-100 text-teal-700 border-teal-200",             dot: "bg-teal-500" },
+    "도면검토중":         { cls: "bg-brand-weak text-brand border-brand/20",              dot: "bg-brand" },
+    "도면수정요청":       { cls: "bg-orange-100 text-orange-700 border-orange-200",        dot: "bg-orange-500" },
   };
   const s = map[status] || { cls: "bg-gray-100 text-gray-500 border-gray-200", dot: "bg-gray-400" };
   const sizeBase = large ? "text-sm px-3 py-1.5 gap-2" : "text-xs px-2 py-1 gap-2";
@@ -1193,10 +1288,10 @@ function Modal({ open, onClose, children, maxW = "max-w-lg" }) {
 /* ═══════════════════════════════════════════════════════
    목대 탭 — Section A: 발주 서류 & 버전 히스토리
 ═══════════════════════════════════════════════════════ */
-function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast, onStatusChange }) {
+function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast, onStatusChange, silcheukImages = [], onMokdaeSchedule, uploadedFiles: initUploadedFiles = {}, onVersionsChange, silcheukFinalDate = "", mokdaeProductionStarted = false }) {
   const [versions, setVersions]     = useState(initVersions);
   const [activeVer, setActiveVer]   = useState(initActive);
-  const [uploadedFiles, setUploadedFiles] = useState({}); // versionNo → [{id,name,size,url,isImage}]
+  const [uploadedFiles, setUploadedFiles] = useState(initUploadedFiles); // versionNo → [{id,name,size,url,isImage}]
   const [dragging, setDragging]     = useState(false);
   const [silcheukOpen, setSilcheukOpen] = useState(true);
   const [lightbox, setLightbox]     = useState(null); // { url, name } | null
@@ -1220,6 +1315,36 @@ function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast
     onStatusChange && onStatusChange("mokdae", badgeStatus);
   }, [badgeStatus]);
 
+  /* 공장 승인(factoryChecked)된 최신 버전의 목대 일정을 부모에 전달
+     → App이 schedule.mokdae + mokdaeFinalDate에 저장 → LeftPanel·index.html 자동 반영 */
+  useEffect(() => {
+    if (!onMokdaeSchedule) return;
+    const approved = versions
+      .filter(v => !v.isNew && v.factoryChecked)
+      .sort((a, b) => b.versionNo - a.versionNo);
+    const date = (approved.length > 0 && approved[0].mokdaeDate) || "";
+    onMokdaeSchedule(date);
+  }, [versions]);
+
+  /* ── 데이터 영속화: 변경 → 부모(App)로 전달 → localStorage 저장 ── */
+  const didMountA = useRef(false);
+  useEffect(() => {
+    if (!didMountA.current) { didMountA.current = true; return; }
+    if (onVersionsChange) onVersionsChange(versions, uploadedFiles);
+  }, [versions, uploadedFiles]);
+
+  /* ── cross-tab 동기화: factory.html에서 factoryChecked 등 변경 시 반영 ── */
+  useEffect(() => {
+    if (JSON.stringify(initVersions) !== JSON.stringify(versions)) setVersions(initVersions);
+  }, [JSON.stringify(initVersions)]);
+  useEffect(() => {
+    if (JSON.stringify(initUploadedFiles) !== JSON.stringify(uploadedFiles)) setUploadedFiles(initUploadedFiles);
+  }, [JSON.stringify(initUploadedFiles)]);
+
+  /* 날짜 입력 제한: 오늘 이전 불가 + 실측 일정 이후만 가능 */
+  const today = new Date().toISOString().slice(0, 10);
+  const minMokdaeDate = silcheukFinalDate && silcheukFinalDate > today ? silcheukFinalDate : today;
+
   const CheckIcon = () => (
     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
@@ -1229,30 +1354,49 @@ function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast
   /* ── 새 버전 추가 ── */
   const handleAddVersion = () => {
     const maxNo = versions.length > 0 ? Math.max(...versions.map(v => v.versionNo)) : 0;
-    const newVer = { versionNo: maxNo + 1, files: [], factoryChecked: false, sentAt: "", sentBy: "", memo: "", isNew: true };
+    const newVer = { versionNo: maxNo + 1, files: [], factoryChecked: false, sentAt: "", sentBy: "", memo: "", mokdaeDate: "", isNew: true };
     setVersions(prev => [...prev, newVer]);
     setActiveVer(maxNo + 1);
   };
 
-  /* ── 파일 업로드 ── */
+  /* ── 파일 업로드 (canvas 리사이즈 → dataURL → localStorage 영속화) ── */
   const handleDragOver  = (e) => { e.preventDefault(); setDragging(true); };
   const handleDragLeave = (e) => { e.preventDefault(); setDragging(false); };
   const handleDrop = (e) => { e.preventDefault(); setDragging(false); handleAddFiles(Array.from(e.dataTransfer.files)); };
   const handleFileInputChange = (e) => { handleAddFiles(Array.from(e.target.files)); e.target.value = ""; };
-  const handleAddFiles = (files) => {
-    if (!files.length) return;
-    const newItems = files.map((f, i) => {
-      const isImage = f.type.startsWith('image/');
-      return {
-        id: Date.now() + i,
-        name: f.name,
-        size: f.size > 1024 * 1024 ? `${(f.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(f.size / 1024)} KB`,
-        url: URL.createObjectURL(f), // 이미지: 미리보기 / 파일: 다운로드용
-        isImage,
+  const handleAddFiles = async (fileList) => {
+    if (!fileList.length) return;
+    const toStorable = (f) => new Promise((resolve) => {
+      const sizeStr = f.size > 1024 * 1024 ? `${(f.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(f.size / 1024)} KB`;
+      if (!f.type.startsWith("image/")) {
+        resolve({ id: Date.now() + Math.random(), name: f.name, size: sizeStr, url: null, isImage: false });
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX = 900;
+          let { width, height } = img;
+          if (width > MAX || height > MAX) {
+            if (width >= height) { height = Math.round(height * MAX / width); width = MAX; }
+            else                 { width  = Math.round(width  * MAX / height); height = MAX; }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width; canvas.height = height;
+          canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+          resolve({
+            id: Date.now() + Math.random(), name: f.name, size: sizeStr,
+            url: canvas.toDataURL("image/jpeg", 0.75), isImage: true,
+          });
+        };
+        img.src = ev.target.result;
       };
+      reader.readAsDataURL(f);
     });
+    const newItems = await Promise.all(fileList.map(toStorable));
     setUploadedFiles(prev => ({ ...prev, [activeVer]: [...(prev[activeVer] || []), ...newItems] }));
-    onToast({ type: "success", title: "파일 추가됨", message: `${files.length}개 파일이 목록에 추가되었습니다.` });
+    onToast({ type: "success", title: "파일 추가됨", message: `${fileList.length}개 파일이 목록에 추가되었습니다.` });
   };
   const handleRemoveFile = (fileId) => {
     setUploadedFiles(prev => ({ ...prev, [activeVer]: (prev[activeVer] || []).filter(f => f.id !== fileId) }));
@@ -1295,15 +1439,23 @@ function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast
         </div>
         <div className="flex items-center gap-2">
           <MokdaeStatusBadge status={badgeStatus} />
-          <button
-            onClick={handleAddVersion}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-brand hover:bg-[#0090e6] rounded-lg shadow-sm transition-all active:scale-95"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-            </svg>
-            버전 추가
-          </button>
+          {!mokdaeProductionStarted && (
+            <button
+              onClick={handleAddVersion}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-brand hover:bg-[#0090e6] rounded-lg shadow-sm transition-all active:scale-95"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+              </svg>
+              버전 추가
+            </button>
+          )}
+          {mokdaeProductionStarted && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-lg">
+              <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse"></span>
+              제작 진행 중
+            </span>
+          )}
         </div>
       </div>
 
@@ -1390,7 +1542,7 @@ function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast
               </div>
             </div>
 
-            {/* 2. 실측 참고 이미지 (토글 접기/펼치기) */}
+            {/* 2. 실측 참고 이미지 (토글 접기/펼치기) — silcheukImages prop으로 실측 탭 업로드 결과 표시 */}
             <div className="border border-gray-200 rounded-xl overflow-hidden">
               <button
                 onClick={() => setSilcheukOpen(p => !p)}
@@ -1401,20 +1553,47 @@ function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                   <span className="text-xs font-semibold text-gray-600">실측 사진 / 실측지 참고 이미지</span>
-                  <span className="text-xs text-gray-400 bg-gray-200 px-1.5 py-0.5 rounded-full">0장</span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${silcheukImages.length > 0 ? "bg-brand-weak text-brand font-bold" : "text-gray-400 bg-gray-200"}`}>{silcheukImages.length}장</span>
                 </div>
                 <svg className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${silcheukOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
               {silcheukOpen && (
-                <div className="px-4 py-8 flex flex-col items-center gap-2 text-gray-300 border-t border-gray-100">
-                  <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <p className="text-sm font-medium text-center">실측 탭에서 업로드된 사진/실측지가 없습니다</p>
-                  <p className="text-xs text-center">실측 탭에서 이미지를 업로드하면 이곳에 표시됩니다.</p>
-                </div>
+                silcheukImages.length > 0 ? (
+                  <div className="p-3 grid grid-cols-3 gap-2 border-t border-gray-100">
+                    {silcheukImages.map(img => (
+                      <div key={img.id} className="relative aspect-[4/3] rounded-lg overflow-hidden border border-gray-200 group cursor-zoom-in"
+                           onClick={() => img.isImage && img.url && setLightbox({ url: img.url, name: img.label || img.name })}>
+                        {img.isImage && img.url ? (
+                          <React.Fragment>
+                            <img src={img.url} alt={img.label || img.name} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                          </React.Fragment>
+                        ) : (
+                          <div className="w-full h-full bg-gray-100 flex flex-col items-center justify-center gap-1 p-2">
+                            <svg className="w-7 h-7 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            <p className="text-xs text-gray-500 truncate w-full text-center">{img.name}</p>
+                          </div>
+                        )}
+                        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/50 to-transparent px-2 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <p className="text-white text-xs truncate">{img.label || img.name}</p>
+                          {img.category && <span className="text-white/70 text-xs">{img.category}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="px-4 py-8 flex flex-col items-center gap-2 text-gray-300 border-t border-gray-100">
+                    <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <p className="text-sm font-medium text-center">실측 탭에서 업로드된 사진/실측지가 없습니다</p>
+                    <p className="text-xs text-center">실측 탭에서 이미지를 업로드하면 이곳에 표시됩니다.</p>
+                  </div>
+                )
               )}
             </div>
 
@@ -1467,6 +1646,25 @@ function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast
                 </div>
               </div>
             )}
+
+            {/* 4. 목대 예정 일정 입력 */}
+            <div className="bg-gray-50 rounded-xl p-3 border border-gray-200">
+              <label className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5 w-28 flex-shrink-0">
+                  <svg className="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span className="text-xs font-semibold text-gray-600">목대 예정 일정</span>
+                </div>
+                <input
+                  type="date"
+                  value={current.mokdaeDate || ""}
+                  min={minMokdaeDate}
+                  onChange={e => setVersions(prev => prev.map(v => v.versionNo === activeVer ? { ...v, mokdaeDate: e.target.value } : v))}
+                  className="flex-1 px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand bg-white text-gray-700"
+                />
+              </label>
+            </div>
 
             {/* 발주 요청 버튼 */}
             <div className="flex items-center justify-between pt-2 border-t border-gray-100">
@@ -1542,6 +1740,18 @@ function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast
                 {current.files.map(f => <FileItem key={f.id} file={f} showRequired />)}
               </div>
             )}
+            {/* 목대 예정 일정 (읽기 전용) */}
+            {current.mokdaeDate && (
+              <div className="bg-gray-50 rounded-xl p-3 border border-gray-200 flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span className="text-xs font-semibold text-gray-600">목대 예정 일정</span>
+                </div>
+                <span className="text-xs font-bold text-gray-800">{current.mokdaeDate}</span>
+              </div>
+            )}
             {current.memo && (
               <div className="bg-gray-50 rounded-lg px-3 py-2 border border-gray-200">
                 <p className="text-xs text-gray-500 font-medium mb-1">발주 메모</p>
@@ -1591,12 +1801,27 @@ function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast
 /* ═══════════════════════════════════════════════════════
    목대 탭 — Section B: CAD 도면 뷰어 & 버전 사이드바
 ═══════════════════════════════════════════════════════ */
-function MokdaeSectionB({ cadVersions: initVersions, activeVer: initActive, onToast }) {
+function MokdaeSectionB({ cadVersions: initVersions, activeVer: initActive, onToast, onCadChange }) {
   const [versions, setVersions]   = useState(initVersions);
   const [activeVer, setActiveVer] = useState(initActive);
   const [lightbox, setLightbox]   = useState(null);
   const [showRevModal, setShowRevModal] = useState(false);
   const [revisionText, setRevisionText] = useState("");
+
+  /* ── 데이터 영속화: 변경 → 부모(App)로 전달 → localStorage 저장 ── */
+  const didMountB = useRef(false);
+  useEffect(() => {
+    if (!didMountB.current) { didMountB.current = true; return; }
+    if (onCadChange) onCadChange(versions);
+  }, [versions]);
+
+  /* ── cross-tab 동기화: factory.html에서 CAD 업로드 시 반영 ── */
+  useEffect(() => {
+    if (JSON.stringify(initVersions) !== JSON.stringify(versions)) {
+      setVersions(initVersions);
+      if (initVersions.length > 0) setActiveVer(initVersions[initVersions.length - 1].versionNo);
+    }
+  }, [JSON.stringify(initVersions)]);
 
   const current = versions.find(v => v.versionNo === activeVer);
 
@@ -1869,9 +2094,20 @@ function MokdaeSectionB({ cadVersions: initVersions, activeVer: initActive, onTo
 /* ═══════════════════════════════════════════════════════
    목대 탭 — Section C: 최종 확정 & 예외 처리
 ═══════════════════════════════════════════════════════ */
-function MokdaeSectionC({ data, onToast }) {
+function MokdaeSectionC({ data, onToast, onConfirmChange, mokdaeProductionStarted = false }) {
   const [approved, setApproved]   = useState(data.consumerApproved);
   const [confirmed, setConfirmed] = useState(!!data.confirmedAt);
+
+  /* ── cross-tab 동기화: factory.html 등에서 데이터 변경 시 반영 ── */
+  useEffect(() => { setApproved(data.consumerApproved); }, [data.consumerApproved]);
+  useEffect(() => { setConfirmed(!!data.confirmedAt); },  [data.confirmedAt]);
+
+  /* ── approved 변경 → 부모에 알림 (mount 스킵) ── */
+  const didMountC = useRef(false);
+  useEffect(() => {
+    if (!didMountC.current) { didMountC.current = true; return; }
+    if (onConfirmChange) onConfirmChange({ consumerApproved: approved, confirmedAt: confirmed ? (data.confirmedAt || null) : null });
+  }, [approved]);
 
   const handleConfirm = () => {
     if (!approved) {
@@ -1879,6 +2115,8 @@ function MokdaeSectionC({ data, onToast }) {
       return;
     }
     setConfirmed(true);
+    const now = new Date().toISOString();
+    if (onConfirmChange) onConfirmChange({ consumerApproved: true, confirmedAt: now });
     onToast({ type: "success", title: "최종 발주 확정", message: "대시보드 목대 발주 상태가 [발주확정]으로 변경되었습니다.", duration: 5000 });
   };
 
@@ -1929,6 +2167,19 @@ function MokdaeSectionC({ data, onToast }) {
           )}
         </button>
 
+        {/* 🏭 제작 진행 중 배너 */}
+        {mokdaeProductionStarted && confirmed && (
+          <div className="flex items-center gap-3 bg-teal-50 border-2 border-teal-200 rounded-xl px-4 py-3.5">
+            <div className="w-8 h-8 rounded-lg bg-teal-500 flex items-center justify-center flex-shrink-0">
+              <svg className="w-4.5 h-4.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
+            </div>
+            <div>
+              <p className="text-sm font-bold text-teal-800">공장에서 제작이 진행 중입니다</p>
+              <p className="text-xs text-teal-600 mt-0.5">제작 진행 중에는 발주 내용 수정이 제한됩니다. 공장에서 제작 중단 시 수정 가능합니다.</p>
+            </div>
+          </div>
+        )}
+
         {/* 긴급 조정 Alert */}
         <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
           <svg className="w-4 h-4 text-red-500 mt-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1978,9 +2229,21 @@ function MokdaeSectionC({ data, onToast }) {
 /* ═══════════════════════════════════════════════════════
    목대 탭 — Section D: 재마감 요청 아코디언
 ═══════════════════════════════════════════════════════ */
-function MokdaeSectionD({ claims: initClaims, onToast }) {
+function MokdaeSectionD({ claims: initClaims, onToast, onClaimsChange }) {
   const [open, setOpen]     = useState(true);
   const [claims, setClaims] = useState(initClaims);
+
+  /* ── 데이터 영속화: 변경 → 부모(App)로 전달 → localStorage 저장 ── */
+  const didMountD = useRef(false);
+  useEffect(() => {
+    if (!didMountD.current) { didMountD.current = true; return; }
+    if (onClaimsChange) onClaimsChange(claims);
+  }, [claims]);
+
+  /* ── cross-tab 동기화 ── */
+  useEffect(() => {
+    if (JSON.stringify(initClaims) !== JSON.stringify(claims)) setClaims(initClaims);
+  }, [JSON.stringify(initClaims)]);
   const [newDate, setNewDate]       = useState("");
   const [newContent, setNewContent] = useState("");
   const [sending, setSending]       = useState(false);
@@ -2673,642 +2936,510 @@ function GigiTab({ onToast }) {
 
 
 /* ═══════════════════════════════════════════════════════
-   상판 탭 — FILE TYPE META (소재스펙 추가)
+   상판 탭 — Section A: 발주 서류 업로드 + 버전 관리
 ═══════════════════════════════════════════════════════ */
-const SANGPAN_FILE_TYPE_META = {
-  "실측지":   { color: "bg-rose-100 text-rose-600 border-rose-200",       icon: "📐" },
-  "현장사진": { color: "bg-purple-100 text-purple-600 border-purple-200",  icon: "📷" },
-  "소재스펙": { color: "bg-teal-100 text-teal-600 border-teal-200",        icon: "🪨" },
-  "3D도면":   { color: "bg-brand-weak text-brand border-brand/20",        icon: "🧊" },
-};
-
-function SangpanFileItem({ file, onDelete, showRequired = false }) {
-  const ext = file.name.split(".").pop().toLowerCase();
-  const meta = SANGPAN_FILE_TYPE_META[file.type] || { color: "bg-gray-100 text-gray-600 border-gray-200", icon: "📄" };
-  const extColor = {
-    pdf: "bg-red-100 text-red-700", zip: "bg-purple-100 text-purple-700",
-    skp: "bg-cyan-100 text-cyan-700", dwg: "bg-brand-weak text-brand",
-  };
-  return (
-    <div className={`flex items-center gap-3 px-3 py-2 rounded-lg border transition-colors group
-      ${!file.uploaded ? "border-dashed border-red-300 bg-red-50/40" : "border-gray-200 bg-white hover:border-brand/30 hover:bg-brand-weak/20"}`}>
-      <span className={`flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${meta.color}`}>
-        <span className="text-base leading-none">{meta.icon}</span>
-        {file.type}
-      </span>
-      <div className="flex-1 min-w-0">
-        {file.uploaded ? (
-          <>
-            <p className="text-sm text-gray-700 font-medium truncate">{file.name}</p>
-            <p className="text-xs text-gray-400">{file.size}</p>
-          </>
-        ) : (
-          <>
-            <p className="text-sm text-red-500 font-medium">미업로드</p>
-            <p className="text-xs text-red-400">{file.required ? "필수 서류" : "선택 서류"}</p>
-          </>
-        )}
-      </div>
-      <div className="flex items-center gap-2 flex-shrink-0">
-        {showRequired && file.required && !file.uploaded && (
-          <span className="text-xs font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">필수 누락</span>
-        )}
-        <span className={`text-xs font-bold px-1.5 py-0.5 rounded uppercase ${extColor[ext] || "bg-gray-100 text-gray-500"}`}>
-          {ext}
-        </span>
-        {file.uploaded && (
-          <button className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-brand">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-          </button>
-        )}
-        {onDelete && (
-          <button
-            onClick={() => onDelete(file.id)}
-            className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-red-500"
-            title="삭제"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════
-   상판 — Section A: 발주 서류 업로드 + 버전 관리
-═══════════════════════════════════════════════════════ */
-function SangpanSectionA({ versions, activeVer, onToast }) {
-  const [selVer, setSelVer] = useState(activeVer);
-  const [fileList, setFileList] = useState(
-    versions.find(v => v.versionNo === activeVer)?.files || []
-  );
-  const [dragging, setDragging] = useState(false);
-  const [warnModal, setWarnModal] = useState(false);
-  const [sending, setSending] = useState(false);
+function SangpanSectionA({ versions: initVersions, activeVer: initActive, onToast, onStatusChange, silcheukImages = [], onSangpanSchedule, uploadedFiles: initUploadedFiles = {}, onVersionsChange, silcheukFinalDate = "", sangpanProductionStarted = false }) {
+  const [versions, setVersions]     = useState(initVersions);
+  const [activeVer, setActiveVer]   = useState(initActive);
+  const [uploadedFiles, setUploadedFiles] = useState(initUploadedFiles); // versionNo → [{id,name,size,url,isImage}]
+  const [dragging, setDragging]     = useState(false);
+  const [silcheukOpen, setSilcheukOpen] = useState(true);
+  const [lightbox, setLightbox]     = useState(null); // { url, name } | null
   const fileInputRef = useRef(null);
 
-  const currentVer = versions.find(v => v.versionNo === selVer);
-  const requiredMissing = currentVer?.files.filter(f => f.required && !f.uploaded) || [];
-  const isLatest = versions.length > 0 && selVer === Math.max(...versions.map(v => v.versionNo));
+  const current       = versions.find(v => v.versionNo === activeVer);
+  const isNewVersion  = current?.isNew === true;
+  const currentFiles  = uploadedFiles[activeVer] || [];
+  const submittedVers = versions.filter(v => !v.isNew);
+  const badgeStatus   = submittedVers.length > 0 ? "발주요청완료" : "발주요청대기";
 
-  /* 버전 선택 시 해당 버전 파일로 교체 */
-  const handleSelectVer = (vNo) => {
-    setSelVer(vNo);
-    setFileList(versions.find(v => v.versionNo === vNo)?.files || []);
+  /* ESC → 라이트박스 닫기 */
+  useEffect(() => {
+    const fn = (e) => { if (e.key === "Escape") setLightbox(null); };
+    document.addEventListener("keydown", fn);
+    return () => document.removeEventListener("keydown", fn);
+  }, []);
+
+  /* 발주 상태 변경 시 부모에 알림 → 대시보드 자동 연동 */
+  useEffect(() => {
+    onStatusChange && onStatusChange("sangpan", badgeStatus);
+  }, [badgeStatus]);
+
+  /* 공장 승인(factoryChecked)된 최신 버전의 상판 일정을 부모에 전달
+     → App이 schedule.mokdae + mokdaeFinalDate에 저장 → LeftPanel·index.html 자동 반영 */
+  useEffect(() => {
+    if (!onSangpanSchedule) return;
+    const approved = versions
+      .filter(v => !v.isNew && v.factoryChecked)
+      .sort((a, b) => b.versionNo - a.versionNo);
+    const date = (approved.length > 0 && approved[0].sangpanDate) || "";
+    onSangpanSchedule(date);
+  }, [versions]);
+
+  /* ── 데이터 영속화: 변경 → 부모(App)로 전달 → localStorage 저장 ── */
+  const didMountA = useRef(false);
+  useEffect(() => {
+    if (!didMountA.current) { didMountA.current = true; return; }
+    if (onVersionsChange) onVersionsChange(versions, uploadedFiles);
+  }, [versions, uploadedFiles]);
+
+  /* ── cross-tab 동기화: factory.html에서 factoryChecked 등 변경 시 반영 ── */
+  useEffect(() => {
+    if (JSON.stringify(initVersions) !== JSON.stringify(versions)) setVersions(initVersions);
+  }, [JSON.stringify(initVersions)]);
+  useEffect(() => {
+    if (JSON.stringify(initUploadedFiles) !== JSON.stringify(uploadedFiles)) setUploadedFiles(initUploadedFiles);
+  }, [JSON.stringify(initUploadedFiles)]);
+
+  /* 날짜 입력 제한: 오늘 이전 불가 + 실측 일정 이후만 가능 */
+  const today = new Date().toISOString().slice(0, 10);
+  const minSangpanDate = silcheukFinalDate && silcheukFinalDate > today ? silcheukFinalDate : today;
+
+  const CheckIcon = () => (
+    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+    </svg>
+  );
+
+  /* ── 새 버전 추가 ── */
+  const handleAddVersion = () => {
+    const maxNo = versions.length > 0 ? Math.max(...versions.map(v => v.versionNo)) : 0;
+    const newVer = { versionNo: maxNo + 1, files: [], factoryChecked: false, sentAt: "", sentBy: "", memo: "", sangpanDate: "", isNew: true };
+    setVersions(prev => [...prev, newVer]);
+    setActiveVer(maxNo + 1);
   };
 
-  /* 드래그 앤 드롭 이벤트 */
-  const handleDragOver = (e) => { e.preventDefault(); setDragging(true); };
+  /* ── 파일 업로드 (canvas 리사이즈 → dataURL → localStorage 영속화) ── */
+  const handleDragOver  = (e) => { e.preventDefault(); setDragging(true); };
   const handleDragLeave = (e) => { e.preventDefault(); setDragging(false); };
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setDragging(false);
-    const files = Array.from(e.dataTransfer.files);
-    handleAddFiles(files);
+  const handleDrop = (e) => { e.preventDefault(); setDragging(false); handleAddFiles(Array.from(e.dataTransfer.files)); };
+  const handleFileInputChange = (e) => { handleAddFiles(Array.from(e.target.files)); e.target.value = ""; };
+  const handleAddFiles = async (fileList) => {
+    if (!fileList.length) return;
+    const toStorable = (f) => new Promise((resolve) => {
+      const sizeStr = f.size > 1024 * 1024 ? `${(f.size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(f.size / 1024)} KB`;
+      if (!f.type.startsWith("image/")) {
+        resolve({ id: Date.now() + Math.random(), name: f.name, size: sizeStr, url: null, isImage: false });
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX = 900;
+          let { width, height } = img;
+          if (width > MAX || height > MAX) {
+            if (width >= height) { height = Math.round(height * MAX / width); width = MAX; }
+            else                 { width  = Math.round(width  * MAX / height); height = MAX; }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width; canvas.height = height;
+          canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+          resolve({
+            id: Date.now() + Math.random(), name: f.name, size: sizeStr,
+            url: canvas.toDataURL("image/jpeg", 0.75), isImage: true,
+          });
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(f);
+    });
+    const newItems = await Promise.all(fileList.map(toStorable));
+    setUploadedFiles(prev => ({ ...prev, [activeVer]: [...(prev[activeVer] || []), ...newItems] }));
+    onToast({ type: "success", title: "파일 추가됨", message: `${fileList.length}개 파일이 목록에 추가되었습니다.` });
   };
-  const handleFileInput = (e) => {
-    const files = Array.from(e.target.files);
-    handleAddFiles(files);
-    e.target.value = "";
-  };
-
-  const handleAddFiles = (files) => {
-    if (files.length === 0) return;
-    const ext = files[0].name.split(".").pop().toLowerCase();
-    const typeMap = { pdf: "실측지", zip: "현장사진", skp: "3D도면", dwg: "3D도면" };
-    const newItems = files.map((f, i) => ({
-      id: Date.now() + i,
-      name: f.name,
-      size: `${(f.size / 1024 / 1024).toFixed(1)} MB`,
-      type: typeMap[f.name.split(".").pop().toLowerCase()] || "기타",
-      required: false,
-      uploaded: true,
-    }));
-    setFileList(prev => [...prev, ...newItems]);
-    onToast({ type: "success", title: "파일 추가됨", message: `${files.length}개 파일이 업로드 목록에 추가되었습니다.` });
-  };
-
-  const handleDelete = (id) => {
-    setFileList(prev => prev.filter(f => f.id !== id));
-  };
-
-  const handleSend = () => {
-    const missing = fileList.filter(f => f.required && !f.uploaded);
-    if (missing.length > 0) { setWarnModal(true); return; }
-    doSend();
-  };
-  const doSend = () => {
-    setWarnModal(false);
-    setSending(true);
-    setTimeout(() => {
-      setSending(false);
-      onToast({ type: "success", title: "발주 요청 발송 완료", message: "공장에 발주 요청이 성공적으로 발송되었습니다.", duration: 5000 });
-    }, 1800);
+  const handleRemoveFile = (fileId) => {
+    setUploadedFiles(prev => ({ ...prev, [activeVer]: (prev[activeVer] || []).filter(f => f.id !== fileId) }));
   };
 
-  /* 버전이 없을 때 빈 상태 */
-  if (versions.length === 0) {
-    return (
-      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-        <SectionHeader
-          color="blue"
-          icon={<svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>}
-          title="발주 서류 업로드 및 버전 관리"
-          sub="도면·사진·스펙 등 필요 서류를 업로드하고 발주를 요청합니다."
-        />
-        <div className="flex flex-col items-center justify-center py-16 gap-3">
-          <svg className="w-10 h-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-          </svg>
-          <p className="text-sm font-medium text-gray-400">아직 등록된 발주 버전이 없습니다</p>
-          <p className="text-xs text-gray-300">발주 서류를 업로드하여 공장에 요청을 시작하세요.</p>
-        </div>
-      </div>
-    );
-  }
+  /* ── 파일 다운로드 ── */
+  const handleDownloadFile = (f) => {
+    if (!f.url) return;
+    const a = document.createElement('a');
+    a.href = f.url;
+    a.download = f.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  /* ── 발주 요청 전송 ── */
+  const doSendRequest = () => {
+    const now = new Date().toLocaleString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+    setVersions(prev => prev.map(v =>
+      v.versionNo === activeVer ? { ...v, isNew: false, factoryChecked: false, sentAt: now, sentBy: "관리자" } : v
+    ));
+    onToast({ type: "success", title: `발주 V${activeVer} 요청 완료`, message: "공장으로 발주 요청이 전송되었습니다." });
+  };
 
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-      <SectionHeader
-        color="blue"
-        icon={<svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>}
-        title="발주 서류 업로드 및 버전 관리"
-        sub="도면·사진·스펙 등 필요 서류를 업로드하고 발주를 요청합니다."
-      />
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      {/* 헤더 (버전 추가 버튼 포함) */}
+      <div className="flex items-center justify-between px-5 py-3 bg-brand-weak border-b border-brand/10">
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-lg bg-brand flex items-center justify-center flex-shrink-0">
+            <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+          </div>
+          <div>
+            <h4 className="text-sm font-bold text-gray-800">Section A · 발주 서류</h4>
+            <p className="text-xs text-gray-400 mt-0.5">버전별 서류 현황 · 공장 확인 상태</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <MokdaeStatusBadge status={badgeStatus} />
+          {!sangpanProductionStarted && (
+            <button
+              onClick={handleAddVersion}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-brand hover:bg-[#0090e6] rounded-lg shadow-sm transition-all active:scale-95"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+              </svg>
+              버전 추가
+            </button>
+          )}
+          {sangpanProductionStarted && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-lg">
+              <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse"></span>
+              제작 진행 중
+            </span>
+          )}
+        </div>
+      </div>
 
-      <div className="flex" style={{ minHeight: 380 }}>
-        {/* ── 좌측: 버전 사이드바 ── */}
-        <div className="w-36 flex-shrink-0 border-r border-gray-100 bg-gray-50/60 py-3 px-2 flex flex-col gap-2">
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest px-2 mb-1">버전 목록</p>
-          {[...versions].reverse().map(v => (
+      <div className="flex" style={{ minHeight: 340 }}>
+        {/* ── 좌측: 버전 히스토리 사이드바 ── */}
+        <div className="w-44 flex-shrink-0 border-r border-gray-100 py-3 flex flex-col">
+          <p className="text-xs font-semibold text-gray-400 px-4 mb-2 uppercase tracking-wide">버전 히스토리</p>
+          {versions.length === 0 && (
+            <div className="flex-1 flex flex-col items-center justify-center px-4 text-center gap-2">
+              <svg className="w-8 h-8 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+              </svg>
+              <p className="text-xs text-gray-300 leading-relaxed">상단 [버전 추가]를<br/>눌러 시작하세요</p>
+            </div>
+          )}
+          {versions.map(v => (
             <button
               key={v.versionNo}
-              onClick={() => handleSelectVer(v.versionNo)}
-              className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold transition-all
-                ${selVer === v.versionNo
-                  ? "bg-brand text-white shadow-sm "
-                  : "bg-white text-gray-600 hover:bg-brand-weak border border-gray-200"
-                }`}
+              onClick={() => setActiveVer(v.versionNo)}
+              className={`w-full text-left px-4 py-2.5 flex flex-col gap-1 transition-colors border-l-2 ${
+                activeVer === v.versionNo ? "border-brand bg-brand-weak" : "border-transparent hover:bg-gray-50"
+              }`}
             >
-              <div className="flex items-center gap-2 mb-1">
-                <svg className="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                {v.label}
-              </div>
-              {v.factoryChecked ? (
-                <span className={`inline-flex items-center gap-1 text-xs font-bold px-1.5 py-0.5 rounded-full
-                  ${selVer === v.versionNo ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-700"}`}>
-                  <span>✓</span> 공장확인
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className={`text-sm font-bold ${activeVer === v.versionNo ? "text-brand" : "text-gray-700"}`}>
+                  발주 V{v.versionNo}
                 </span>
+                {v.versionNo === Math.max(...versions.map(x => x.versionNo)) && (
+                  <span className="text-xs bg-brand text-white px-1.5 py-0.5 rounded font-bold leading-none">최신</span>
+                )}
+              </div>
+              {v.isNew ? (
+                <span className="inline-flex text-xs font-semibold px-2 py-0.5 rounded-full w-fit bg-orange-100 text-orange-600 border border-orange-200">작성중</span>
               ) : (
-                <span className={`inline-flex items-center gap-1 text-xs font-bold px-1.5 py-0.5 rounded-full
-                  ${selVer === v.versionNo ? "bg-white/20 text-white" : "bg-gray-200 text-gray-500"}`}>
-                  미확인
+                <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full w-fit ${
+                  v.factoryChecked ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-400"
+                }`}>
+                  {v.factoryChecked ? <><CheckIcon />공장확인</> : "공장 미확인"}
                 </span>
               )}
-              <p className={`text-xs mt-1.5 ${selVer === v.versionNo ? "text-white/70" : "text-gray-400"}`}>
-                {v.sentAt.slice(5, 16)}
-              </p>
+              {v.sentAt && <span className="text-xs text-gray-400">{String(v.sentAt).slice(0, 10)}</span>}
             </button>
           ))}
         </div>
 
-        {/* ── 우측: 파일 관리 영역 ── */}
-        <div className="flex-1 flex flex-col p-4 gap-3 min-w-0">
-
-          {/* 드래그 앤 드롭 영역 (최신 버전일 때만) */}
-          {isLatest && (
-            <div
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              className={`relative flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed transition-all cursor-pointer py-7
-                ${dragging
-                  ? "border-brand bg-brand-weak scale-[1.01]"
-                  : "border-gray-300 bg-gray-50/50 hover:border-brand hover:bg-brand-weak/30"
-                }`}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                className="hidden"
-                onChange={handleFileInput}
-              />
-              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-colors
-                ${dragging ? "bg-brand-weak" : "bg-white border border-gray-200"}`}>
-                <svg className={`w-5 h-5 transition-colors ${dragging ? "text-brand" : "text-gray-400"}`}
-                  fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
-                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-              </div>
-              <div className="text-center">
-                <p className={`text-sm font-semibold transition-colors ${dragging ? "text-brand" : "text-gray-600"}`}>
-                  {dragging ? "여기에 놓으세요!" : "여기로 파일을 끌어오거나"}
-                </p>
-                {!dragging && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    <span className="text-brand font-semibold underline underline-offset-2">[파일 선택]</span>을 눌러
-                    도면 / 스펙을 업로드하세요
-                  </p>
-                )}
-              </div>
-              <div className="flex items-center gap-2 text-xs text-gray-400">
-                <span className="bg-white border border-gray-200 px-2 py-0.5 rounded-full">PDF</span>
-                <span className="bg-white border border-gray-200 px-2 py-0.5 rounded-full">ZIP</span>
-                <span className="bg-white border border-gray-200 px-2 py-0.5 rounded-full">SKP</span>
-                <span className="bg-white border border-gray-200 px-2 py-0.5 rounded-full">DWG</span>
-              </div>
-            </div>
-          )}
-
-          {/* 파일 목록 헤더 */}
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              {currentVer?.label} 서류 목록
-              <span className="ml-2 text-gray-300 font-normal normal-case tracking-normal">
-                ({fileList.length}개)
-              </span>
-            </p>
-            {requiredMissing.length > 0 && (
-              <span className="text-xs text-red-600 font-semibold bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
-                ⚠ 필수 서류 {requiredMissing.length}개 미업로드
-              </span>
-            )}
+        {/* ── 우측: 버전 상세 ── */}
+        {versions.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-gray-300">
+            <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            <p className="text-sm font-medium text-gray-400">아직 등록된 발주 버전이 없습니다</p>
+            <p className="text-xs">좌측 상단 [버전 추가] 버튼을 눌러 시작하세요.</p>
           </div>
 
-          {/* 파일 목록 */}
-          <div className="flex flex-col gap-2 flex-1 overflow-y-auto">
-            {fileList.map(f => (
-              <SangpanFileItem
-                key={f.id}
-                file={f}
-                showRequired
-                onDelete={isLatest ? handleDelete : null}
-              />
-            ))}
-            {fileList.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-8 text-gray-300">
-                <svg className="w-8 h-8 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                    d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <p className="text-sm font-medium">업로드된 파일이 없습니다</p>
-              </div>
-            )}
-          </div>
+        ) : current && isNewVersion ? (
+          /* ── 신규 버전 작성 UI ── */
+          <div className="flex-1 min-w-0 px-5 py-4 space-y-4 overflow-y-auto">
 
-          {/* 발주 요청 발송 버튼 */}
-          {isLatest && (
-            <div className="pt-2 border-t border-gray-100">
-              <button
-                onClick={handleSend}
-                disabled={sending}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold
-                  bg-brand hover:bg-[#0090e6] disabled:bg-gray-300 text-white shadow-sm 
-                  hover:shadow hover:-translate-y-0.5 transition-all"
-              >
-                {sending ? (
-                  <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>발송 중…</>
-                ) : (
-                  <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>발주 요청 발송</>
-                )}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── 필수 서류 누락 경고 모달 ── */}
-      <Modal open={warnModal} onClose={() => setWarnModal(false)}>
-        <div className="px-6 pt-6 pb-5 flex flex-col gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
-              <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-              </svg>
-            </div>
+            {/* 1. 드래그앤드롭 업로드 */}
             <div>
-              <h3 className="text-base font-bold text-gray-900">필수 서류 미업로드</h3>
-              <p className="text-sm text-gray-500 mt-1">일부 필수 서류가 누락되어 있습니다.</p>
-            </div>
-          </div>
-          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 space-y-2">
-            {fileList.filter(f => f.required && !f.uploaded).map(f => (
-              <div key={f.id} className="flex items-center gap-2 text-sm text-red-700">
-                <svg className="w-4 h-4 text-red-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                <span className="font-medium">{f.type}</span>
-                <span className="text-red-400">— 미업로드</span>
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-gray-500 leading-relaxed">
-            필수 서류 없이 발주를 요청할 경우 공장에서 처리가 지연될 수 있습니다.<br/>
-            그래도 발송하시겠습니까?
-          </p>
-          <div className="flex gap-3">
-            <button onClick={() => setWarnModal(false)}
-              className="flex-1 py-2 rounded-xl text-sm font-semibold border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors">
-              취소 (서류 추가)
-            </button>
-            <button onClick={doSend}
-              className="flex-1 py-2 rounded-xl text-sm font-bold bg-red-600 hover:bg-red-700 text-white transition-colors">
-              그래도 발송
-            </button>
-          </div>
-        </div>
-      </Modal>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════
-   상판 — Section B: 도면 뷰어 + 승인 / 수정 요청
-═══════════════════════════════════════════════════════ */
-function SangpanSectionB({ drawingVersions, activeVer, onToast }) {
-  const [selVer, setSelVer] = useState(activeVer);
-  const [showDetail, setShowDetail] = useState(false);
-  const [revModal, setRevModal] = useState(false);
-  const [revNote, setRevNote] = useState("");
-  const [approving, setApproving] = useState(false);
-  const [lightbox, setLightbox] = useState(null);
-
-  const cur = drawingVersions.find(v => v.versionNo === selVer);
-
-  /* 도면이 없을 때 빈 상태 — ALL hooks called above, safe to early-return */
-  if (drawingVersions.length === 0) {
-    return (
-      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-        <SectionHeader
-          color="orange"
-          icon={<svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 0v10m0-10a2 2 0 012 2h2a2 2 0 012-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" /></svg>}
-          title="도면 검토 및 승인"
-          sub="공장에서 업로드한 상판 도면을 확인하고 승인 또는 수정을 요청합니다."
-        />
-        <div className="flex flex-col items-center justify-center py-16 gap-3">
-          <svg className="w-10 h-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 0v10m0-10a2 2 0 012 2h2a2 2 0 012-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-          </svg>
-          <p className="text-sm font-medium text-gray-400">아직 등록된 도면이 없습니다</p>
-          <p className="text-xs text-gray-300">공장에서 도면을 업로드하면 이곳에 표시됩니다.</p>
-        </div>
-      </div>
-    );
-  }
-
-  const previewSrc = showDetail ? cur.previewUrl2 : cur.previewUrl;
-
-  const statusStyle = {
-    "승인":       "bg-emerald-100 text-emerald-700 border-emerald-200",
-    "승인해제":   "bg-gray-100 text-gray-500 border-gray-200",
-    "수정요청":   "bg-orange-100 text-orange-700 border-orange-200",
-    "CAD수정요청":"bg-orange-100 text-orange-700 border-orange-200",
-    "검토중":     "bg-brand-weak text-brand border-brand/20",
-  };
-
-  const handleApprove = () => {
-    setApproving(true);
-    setTimeout(() => {
-      setApproving(false);
-      onToast({ type: "success", title: "도면 승인 완료", message: `${cur.label} 도면이 승인되었습니다.`, duration: 5000 });
-    }, 1400);
-  };
-
-  const handleRevision = () => {
-    if (!revNote.trim()) {
-      onToast({ type: "warning", title: "수정 내용 미입력", message: "수정 요청 내용을 입력해주세요." });
-      return;
-    }
-    setRevModal(false);
-    onToast({ type: "info", title: "수정 요청 전송", message: "도면 수정 요청이 공장으로 전송되었습니다.", duration: 5000 });
-    setRevNote("");
-  };
-
-  return (
-    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-      <SectionHeader
-        color="orange"
-        icon={<svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 0v10m0-10a2 2 0 012 2h2a2 2 0 012-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" /></svg>}
-        title="도면 검토 및 승인"
-        sub="공장에서 업로드한 상판 도면을 확인하고 승인 또는 수정을 요청합니다."
-      />
-
-      <div className="flex" style={{ minHeight: 380 }}>
-        {/* ── 좌측: 도면 버전 사이드바 ── */}
-        <div className="w-36 flex-shrink-0 border-r border-gray-100 bg-gray-50/60 py-3 px-2 flex flex-col gap-2">
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest px-2 mb-1">도면 버전</p>
-          {[...drawingVersions].reverse().map(v => (
-            <button
-              key={v.versionNo}
-              onClick={() => { setSelVer(v.versionNo); setShowDetail(false); }}
-              className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold transition-all
-                ${selVer === v.versionNo
-                  ? "bg-orange-500 text-white shadow-sm shadow-orange-200"
-                  : "bg-white text-gray-600 hover:bg-orange-50 border border-gray-200"
+              <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">발주서 파일 업로드</p>
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className={`relative flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed transition-all cursor-pointer py-8 ${
+                  dragging ? "border-brand bg-brand-weak scale-[1.01]" : "border-gray-300 bg-gray-50/50 hover:border-brand hover:bg-brand-weak/30"
                 }`}
-            >
-              <div className="flex items-center gap-2 mb-1.5">
-                <svg className="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
-                </svg>
-                {v.label}
+              >
+                <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileInputChange} />
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${dragging ? "bg-brand-weak" : "bg-white border border-gray-200"}`}>
+                  <svg className={`w-5 h-5 transition-colors ${dragging ? "text-brand" : "text-gray-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                </div>
+                <div className="text-center">
+                  <p className={`text-sm font-semibold transition-colors ${dragging ? "text-brand" : "text-gray-600"}`}>
+                    {dragging ? "여기에 놓으세요!" : "파일을 드래그하거나 클릭하여 업로드"}
+                  </p>
+                  {!dragging && <p className="text-xs text-gray-400 mt-1">발주서, 도면, 사진 등 모든 파일 형식 지원</p>}
+                </div>
               </div>
-              <span className={`inline-block text-xs font-bold px-1.5 py-0.5 rounded-full border
-                ${selVer === v.versionNo
-                  ? "bg-white/20 text-white border-white/20"
-                  : statusStyle[v.status] || "bg-gray-100 text-gray-500 border-gray-200"
-                }`}>
-                {v.status}
-              </span>
-              <p className={`text-xs mt-1.5 ${selVer === v.versionNo ? "text-orange-200" : "text-gray-400"}`}>
-                {v.uploadedAt.slice(5, 16)}
-              </p>
-            </button>
-          ))}
-        </div>
-
-        {/* ── 우측: 도면 뷰어 영역 ── */}
-        <div className="flex-1 flex flex-col min-w-0 p-4 gap-3">
-
-          {/* 승인 해제 워터마크 배너 */}
-          {cur.status === "승인해제" && (
-            <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 rounded-xl px-3 py-2 text-xs text-gray-600">
-              <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span>
-                <strong>{cur.approvedAt?.slice(0, 10)}</strong> 승인 → 새 발주서(V2) 업로드로 <strong>{cur.approvalCancelledAt?.slice(0, 10)}</strong> 자동 해제됨
-              </span>
             </div>
-          )}
 
-          {/* 수정 요청 내용 배너 */}
-          {cur.revisionNote && (
-            <div className="bg-orange-50 border border-orange-200 rounded-xl px-3 py-2 text-xs text-orange-800 leading-relaxed">
-              <p className="font-bold mb-1 flex items-center gap-2">
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            {/* 2. 실측 참고 이미지 (토글 접기/펼치기) — silcheukImages prop으로 실측 탭 업로드 결과 표시 */}
+            <div className="border border-gray-200 rounded-xl overflow-hidden">
+              <button
+                onClick={() => setSilcheukOpen(p => !p)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span className="text-xs font-semibold text-gray-600">실측 사진 / 실측지 참고 이미지</span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${silcheukImages.length > 0 ? "bg-brand-weak text-brand font-bold" : "text-gray-400 bg-gray-200"}`}>{silcheukImages.length}장</span>
+                </div>
+                <svg className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${silcheukOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
-                수정 요청 내용
-              </p>
-              {cur.revisionNote}
-            </div>
-          )}
-
-          {/* 도면 이미지 뷰어 */}
-          <div className="relative rounded-xl overflow-hidden border border-gray-200 bg-gray-100 flex-1 flex flex-col" style={{ minHeight: 200 }}>
-            {/* 뷰 전환 토글 */}
-            <div className="absolute top-2 left-2 z-10 flex gap-1">
-              <button
-                onClick={() => setShowDetail(false)}
-                className={`px-2 py-1 text-xs font-semibold rounded-lg shadow transition-all
-                  ${!showDetail ? "bg-white text-gray-800 shadow-md" : "bg-black/30 text-white hover:bg-black/40"}`}
-              >
-                평면도
               </button>
-              <button
-                onClick={() => setShowDetail(true)}
-                className={`px-2 py-1 text-xs font-semibold rounded-lg shadow transition-all
-                  ${showDetail ? "bg-white text-gray-800 shadow-md" : "bg-black/30 text-white hover:bg-black/40"}`}
-              >
-                상세도
-              </button>
+              {silcheukOpen && (
+                silcheukImages.length > 0 ? (
+                  <div className="p-3 grid grid-cols-3 gap-2 border-t border-gray-100">
+                    {silcheukImages.map(img => (
+                      <div key={img.id} className="relative aspect-[4/3] rounded-lg overflow-hidden border border-gray-200 group cursor-zoom-in"
+                           onClick={() => img.isImage && img.url && setLightbox({ url: img.url, name: img.label || img.name })}>
+                        {img.isImage && img.url ? (
+                          <React.Fragment>
+                            <img src={img.url} alt={img.label || img.name} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                          </React.Fragment>
+                        ) : (
+                          <div className="w-full h-full bg-gray-100 flex flex-col items-center justify-center gap-1 p-2">
+                            <svg className="w-7 h-7 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            <p className="text-xs text-gray-500 truncate w-full text-center">{img.name}</p>
+                          </div>
+                        )}
+                        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/50 to-transparent px-2 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <p className="text-white text-xs truncate">{img.label || img.name}</p>
+                          {img.category && <span className="text-white/70 text-xs">{img.category}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="px-4 py-8 flex flex-col items-center gap-2 text-gray-300 border-t border-gray-100">
+                    <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <p className="text-sm font-medium text-center">실측 탭에서 업로드된 사진/실측지가 없습니다</p>
+                    <p className="text-xs text-center">실측 탭에서 이미지를 업로드하면 이곳에 표시됩니다.</p>
+                  </div>
+                )
+              )}
             </div>
 
-            {/* 확대 버튼 */}
-            <button
-              onClick={() => setLightbox(previewSrc)}
-              className="absolute top-2 right-2 z-10 w-8 h-8 bg-black/40 hover:bg-black/60 text-white rounded-lg flex items-center justify-center transition-all"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
-              </svg>
-            </button>
-
-            {/* 승인해제 워터마크 */}
-            {cur.status === "승인해제" && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
-                <div className="relative flex flex-col items-center justify-center gap-2"
-                  style={{ transform: "rotate(-22deg)" }}>
-                  <p className="text-5xl font-black tracking-widest select-none"
-                    style={{ color: "rgba(100,116,139,0.28)", textShadow: "0 2px 8px rgba(255,255,255,0.5)" }}>
-                    VOID
-                  </p>
-                  <p className="text-lg font-bold tracking-wider select-none"
-                    style={{ color: "rgba(100,116,139,0.22)" }}>
-                    승인 취소됨
-                  </p>
+            {/* 3. 업로드된 발주서 파일 프리뷰 */}
+            {currentFiles.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
+                  업로드된 발주서
+                  <span className="ml-1.5 text-gray-300 font-normal normal-case tracking-normal">({currentFiles.length}개)</span>
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  {currentFiles.map(f => (
+                    <div key={f.id} className="border border-gray-200 rounded-xl overflow-hidden bg-white hover:border-brand/30 transition-colors group">
+                      {f.isImage ? (
+                        <div className="relative h-28 bg-gray-100 cursor-zoom-in" onClick={() => setLightbox({ url: f.url, name: f.name })}>
+                          <img src={f.url} alt={f.name} className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                            <svg className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 drop-shadow transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0zm0 0l3 3"/>
+                            </svg>
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleRemoveFile(f.id); }}
+                            className="absolute top-1.5 right-1.5 w-6 h-6 bg-black/50 hover:bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
+                          >
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12"/></svg>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="relative h-28 bg-gray-50 flex flex-col items-center justify-center gap-1.5 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleDownloadFile(f)}>
+                          <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                          </svg>
+                          <span className="text-xs text-gray-400 font-semibold uppercase">{f.name.split('.').pop()}</span>
+                          <span className="text-xs text-brand/60 font-medium">클릭하여 다운로드</span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleRemoveFile(f.id); }}
+                            className="absolute top-1.5 right-1.5 w-6 h-6 bg-black/30 hover:bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
+                          >
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12"/></svg>
+                          </button>
+                        </div>
+                      )}
+                      <div className="px-3 py-2">
+                        <p className="text-xs font-medium text-gray-700 truncate" title={f.name}>{f.name}</p>
+                        <p className="text-xs text-gray-400">{f.size}</p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
 
-            <img
-              key={previewSrc}
-              src={previewSrc}
-              alt={`${cur.label} 도면`}
-              className="w-full h-full object-cover flex-1 cursor-zoom-in"
-              style={{ minHeight: 200 }}
-              onClick={() => setLightbox(previewSrc)}
-              loading="lazy"
-            />
-          </div>
+            {/* 4. 상판 예정 일정 입력 */}
+            <div className="bg-gray-50 rounded-xl p-3 border border-gray-200">
+              <label className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5 w-28 flex-shrink-0">
+                  <svg className="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span className="text-xs font-semibold text-gray-600">상판 예정 일정</span>
+                </div>
+                <input
+                  type="date"
+                  value={current.sangpanDate || ""}
+                  min={minSangpanDate}
+                  onChange={e => setVersions(prev => prev.map(v => v.versionNo === activeVer ? { ...v, sangpanDate: e.target.value } : v))}
+                  className="flex-1 px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand bg-white text-gray-700"
+                />
+              </label>
+            </div>
 
-          {/* 액션 버튼 영역 */}
-          <div className="flex gap-2 pt-1">
-            <button
-              onClick={handleApprove}
-              disabled={approving || cur.status === "승인"}
-              className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-bold
-                bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white transition-all shadow-sm"
-            >
-              {approving ? (
-                <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>승인 처리 중…</>
-              ) : cur.status === "승인" ? (
-                <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>승인됨</>
-              ) : (
-                <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>도면 승인</>
+            {/* 발주 요청 버튼 */}
+            <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+              {currentFiles.length === 0 && (
+                <p className="text-xs text-gray-400 flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  파일을 업로드한 후 발주 요청이 가능합니다
+                </p>
               )}
-            </button>
-            <button
-              onClick={() => setRevModal(true)}
-              className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-bold
-                border-2 border-orange-400 text-orange-600 hover:bg-orange-50 transition-all"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-              수정 요청
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ── 수정 요청 모달 ── */}
-      <Modal open={revModal} onClose={() => setRevModal(false)}>
-        <div className="px-6 pt-6 pb-5 flex flex-col gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center flex-shrink-0">
-              <svg className="w-5 h-5 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-gray-900">도면 수정 요청</h3>
-              <p className="text-sm text-gray-500 mt-1">{cur.label} — 수정 내용을 공장에 전달합니다.</p>
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5">수정 요청 내용 <span className="text-red-500">*</span></label>
-            <textarea
-              value={revNote}
-              onChange={e => setRevNote(e.target.value)}
-              rows={4}
-              placeholder="수정이 필요한 부분과 구체적인 치수/사유를 입력하세요."
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent text-gray-700 leading-relaxed placeholder:text-gray-300"
-            />
-          </div>
-          <div className="flex gap-3">
-            <button onClick={() => setRevModal(false)}
-              className="flex-1 py-2 rounded-xl text-sm font-semibold border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors">
-              취소
-            </button>
-            <button onClick={handleRevision}
-              className="flex-1 py-2 rounded-xl text-sm font-bold bg-orange-500 hover:bg-orange-600 text-white transition-colors">
-              수정 요청 전송
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* ── 라이트박스 ── */}
-      {lightbox && (
-        <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-6"
-          onClick={() => setLightbox(null)}>
-          <div className="relative max-w-4xl w-full bg-white rounded-2xl overflow-hidden shadow"
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-              <p className="text-sm font-semibold text-gray-800">{cur.label} 도면 확대</p>
-              <button onClick={() => setLightbox(null)}
-                className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500 transition-colors">
+              <button
+                onClick={doSendRequest}
+                disabled={currentFiles.length === 0}
+                className={`ml-auto flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl shadow-sm transition-all ${
+                  currentFiles.length === 0 ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-brand hover:bg-[#0090e6] text-white"
+                }`}
+              >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                 </svg>
+                발주 요청
               </button>
             </div>
-            <img src={lightbox} alt="확대 도면" className="w-full object-contain max-h-[72vh]" />
-            <div className="px-4 py-2 bg-gray-50 text-xs text-gray-400 text-center">
-              클릭하거나 ESC를 눌러 닫기
+          </div>
+
+        ) : current ? (
+          /* ── 기존 버전 상세 (읽기 전용) ── */
+          <div className="flex-1 min-w-0 px-5 py-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-bold text-gray-800">발주 V{current.versionNo} 상세</p>
+                <p className="text-xs text-gray-400">발송: {current.sentBy} · {current.sentAt}</p>
+              </div>
+              {current.factoryChecked && (
+                <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1.5">
+                  <CheckIcon /> 공장 열람 {current.factoryCheckedAt}
+                </div>
+              )}
+            </div>
+            {/* 업로드된 파일 프리뷰 (있을 경우) */}
+            {(uploadedFiles[current.versionNo] || []).length > 0 ? (
+              <div className="grid grid-cols-2 gap-3">
+                {(uploadedFiles[current.versionNo] || []).map(f => (
+                  <div key={f.id} className="border border-gray-200 rounded-xl overflow-hidden bg-white group">
+                    {f.isImage ? (
+                      <div className="relative h-28 bg-gray-100 cursor-zoom-in" onClick={() => setLightbox({ url: f.url, name: f.name })}>
+                        <img src={f.url} alt={f.name} className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                          <svg className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 drop-shadow transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
+                          </svg>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="w-full h-28 bg-gray-50 flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleDownloadFile(f)}>
+                        <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        <span className="text-xs text-gray-400 font-semibold uppercase">{f.name.split('.').pop()}</span>
+                        <span className="text-xs text-brand/60 font-medium">클릭하여 다운로드</span>
+                      </div>
+                    )}
+                    <div className="px-3 py-2">
+                      <p className="text-xs font-medium text-gray-700 truncate">{f.name}</p>
+                      <p className="text-xs text-gray-400">{f.size}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {current.files.map(f => <FileItem key={f.id} file={f} showRequired />)}
+              </div>
+            )}
+            {/* 상판 예정 일정 (읽기 전용) */}
+            {current.sangpanDate && (
+              <div className="bg-gray-50 rounded-xl p-3 border border-gray-200 flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span className="text-xs font-semibold text-gray-600">상판 예정 일정</span>
+                </div>
+                <span className="text-xs font-bold text-gray-800">{current.sangpanDate}</span>
+              </div>
+            )}
+            {current.memo && (
+              <div className="bg-gray-50 rounded-lg px-3 py-2 border border-gray-200">
+                <p className="text-xs text-gray-500 font-medium mb-1">발주 메모</p>
+                <p className="text-sm text-gray-700 leading-relaxed">{current.memo}</p>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </div>
+
+      {/* ── 이미지 라이트박스 ── */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-6"
+          style={{ background: "rgba(0,0,0,0.88)" }}
+          onClick={() => setLightbox(null)}
+        >
+          <div className="relative flex flex-col items-center max-w-[92vw]" onClick={e => e.stopPropagation()}>
+            {/* 닫기 버튼 */}
+            <button
+              onClick={() => setLightbox(null)}
+              className="absolute -top-4 -right-4 z-10 w-9 h-9 bg-white/20 hover:bg-white/40 text-white rounded-full flex items-center justify-center transition-colors shadow-lg"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            {/* 이미지 */}
+            <img
+              src={lightbox.url}
+              alt={lightbox.name}
+              className="max-w-full rounded-xl object-contain shadow-2xl"
+              style={{ maxHeight: "80vh" }}
+            />
+            {/* 하단 파일명 + ESC 안내 */}
+            <div className="mt-3 flex items-center gap-4 w-full px-1">
+              <p className="flex-1 text-white/70 text-sm truncate">{lightbox.name}</p>
+              <span className="flex-shrink-0 text-xs text-white/40 bg-white/10 px-2 py-1 rounded">ESC로 닫기</span>
             </div>
           </div>
         </div>
@@ -3318,133 +3449,454 @@ function SangpanSectionB({ drawingVersions, activeVer, onToast }) {
 }
 
 /* ═══════════════════════════════════════════════════════
-   상판 — Section C: 소비자 승인 및 최종 발주 확정
+   상판 탭 — Section B: 상판 도면 뷰어 & 버전 사이드바
 ═══════════════════════════════════════════════════════ */
-function SangpanSectionC({ data, onToast }) {
-  const [approved, setApproved] = useState(data.consumerApproved);
-  const [confirmed, setConfirmed] = useState(!!data.confirmedAt);
-  const [confirming, setConfirming] = useState(false);
+function SangpanSectionB({ drawingVersions: initVersions, activeVer: initActive, onToast, onDrawingChange }) {
+  const [versions, setVersions]   = useState(initVersions);
+  const [activeVer, setActiveVer] = useState(initActive);
+  const [lightbox, setLightbox]   = useState(null);
+  const [showRevModal, setShowRevModal] = useState(false);
+  const [revisionText, setRevisionText] = useState("");
 
-  const handleConfirm = () => {
-    if (!approved) {
-      onToast({ type: "warning", title: "소비자 승인 필요", message: "소비자 승인 체크박스를 먼저 체크해주세요." });
+  /* ── 데이터 영속화: 변경 → 부모(App)로 전달 → localStorage 저장 ── */
+  const didMountB = useRef(false);
+  useEffect(() => {
+    if (!didMountB.current) { didMountB.current = true; return; }
+    if (onDrawingChange) onDrawingChange(versions);
+  }, [versions]);
+
+  /* ── cross-tab 동기화: factory.html에서 CAD 업로드 시 반영 ── */
+  useEffect(() => {
+    if (JSON.stringify(initVersions) !== JSON.stringify(versions)) {
+      setVersions(initVersions);
+      if (initVersions.length > 0) setActiveVer(initVersions[initVersions.length - 1].versionNo);
+    }
+  }, [JSON.stringify(initVersions)]);
+
+  const current = versions.find(v => v.versionNo === activeVer);
+
+  const cadStatusStyle = {
+    "승인":       "bg-emerald-100 text-emerald-700 border-emerald-200",
+    "승인해제":   "bg-red-100 text-red-700 border-red-200",
+    "도면수정요청":"bg-orange-100 text-orange-700 border-orange-200",
+    "도면검토중":"bg-brand-weak text-brand border-brand/20",
+  };
+
+  const handleApprove = () => {
+    setVersions(prev => prev.map(v =>
+      v.versionNo === activeVer ? { ...v, status: "승인", approvedAt: "2026-02-25 (방금)" } : v
+    ));
+    onToast({ type: "success", title: "상판 도면 승인 완료", message: `도면 V${activeVer} 도면이 승인되었습니다.`, duration: 4000 });
+  };
+
+  const handleRevisionSubmit = () => {
+    if (!revisionText.trim()) {
+      onToast({ type: "warning", title: "사유 입력 필요", message: "수정 요청 사유를 입력해주세요." });
       return;
     }
-    setConfirming(true);
-    setTimeout(() => {
-      setConfirming(false);
-      setConfirmed(true);
-      onToast({ type: "success", title: "최종 발주 확정 완료", message: "상판 발주가 최종 확정되었습니다. 대시보드 상태가 변경됩니다.", duration: 5000 });
-    }, 1500);
+    setVersions(prev => prev.map(v =>
+      v.versionNo === activeVer ? { ...v, status: "도면수정요청", revisionNote: revisionText } : v
+    ));
+    setShowRevModal(false);
+    setRevisionText("");
+    onToast({ type: "info", title: "수정 요청 전송", message: "공장으로 상판 도면 수정 요청이 전송되었습니다." });
   };
 
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+    <>
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <SectionHeader
+          color="orange"
+          icon={<svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>}
+          title="Section B · 상판 도면 검토"
+          sub="버전 클릭 → 뷰어 전환 · 승인 또는 수정 요청"
+          badge={<MokdaeStatusBadge status={versions.length === 0 ? "발주요청대기" : (current?.status || "도면검토중")} />}
+        />
+
+        <div className="flex min-h-[300px]">
+          {versions.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center py-14 gap-3 text-gray-300">
+              <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+              </svg>
+              <p className="text-sm font-medium text-gray-400">아직 등록된 상판 도면이 없습니다</p>
+              <p className="text-xs">발주 서류가 전달되면 공장에서 도면을 업로드합니다.</p>
+            </div>
+          ) : (<>
+          {/* 좌측: CAD 버전 사이드바 */}
+          <div className="w-44 flex-shrink-0 border-r border-gray-100 py-3">
+            <p className="text-xs font-semibold text-gray-400 px-4 mb-2 uppercase tracking-wide">도면 버전</p>
+            {versions.map(v => (
+              <button
+                key={v.versionNo}
+                onClick={() => setActiveVer(v.versionNo)}
+                className={`w-full text-left px-4 py-3 flex flex-col gap-2 transition-colors border-l-2 ${
+                  activeVer === v.versionNo
+                    ? "border-orange-500 bg-orange-50"
+                    : "border-transparent hover:bg-gray-50"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`text-sm font-bold ${activeVer === v.versionNo ? "text-orange-700" : "text-gray-700"}`}>
+                    도면 V{v.versionNo}
+                  </span>
+                  {v.versionNo === versions.length && (
+                    <span className="text-xs bg-orange-500 text-white px-1.5 py-0.5 rounded font-bold leading-none">최신</span>
+                  )}
+                </div>
+                <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-full border w-fit ${cadStatusStyle[v.status] || "bg-gray-100 text-gray-500 border-gray-200"}`}>
+                  {v.status}
+                </span>
+                <span className="text-xs text-gray-400">{v.uploadedAt.slice(5,10)}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* 중앙: 도면 뷰어 */}
+          {current && (
+            <div className="flex-1 min-w-0 flex flex-col" style={{minHeight: 300}}>
+              {/* 이미지 뷰어 */}
+              <div className="relative flex-1 bg-gray-100 cursor-zoom-in group"
+                   style={{ minHeight: "220px" }}
+                   onClick={() => setLightbox(current.previewUrl)}>
+                <img
+                  src={current.previewUrl}
+                  alt={`도면 V${current.versionNo}`}
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                  style={{ maxHeight: "260px", objectFit: "cover" }}
+                />
+
+                {/* 승인 해제 워터마크 */}
+                {current.status === "승인해제" && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="absolute inset-0 bg-red-900/20"></div>
+                    <div className="relative z-10 select-none" style={{ transform: "rotate(-22deg)" }}>
+                      <span className="text-red-600/75 font-black tracking-[0.2em] whitespace-nowrap"
+                            style={{ fontSize:"clamp(18px,3vw,32px)", textShadow:"0 0 12px rgba(255,255,255,0.9)", WebkitTextStroke:"0.5px rgba(180,0,0,0.4)" }}>
+                        승인 취소됨
+                      </span>
+                    </div>
+                    <div className="absolute top-2 right-2 bg-red-600 text-white text-xs font-bold px-2 py-0.5 rounded shadow">VOID</div>
+                  </div>
+                )}
+
+                {/* 승인 완료 오버레이 */}
+                {current.status === "승인" && (
+                  <div className="absolute top-2 left-2 flex items-center gap-2 bg-emerald-600/90 text-white text-xs font-bold px-2 py-1 rounded-lg shadow-md">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                    </svg>
+                    승인됨 · {current.approvedAt}
+                  </div>
+                )}
+
+                {/* 확대 힌트 */}
+                <div className="absolute bottom-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                  클릭하여 확대
+                </div>
+              </div>
+
+              {/* 업로드 날짜 + 두 번째 도면 버튼 */}
+              <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-t border-gray-100 text-xs text-gray-500">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                공장 업로드: {current.uploadedAt}
+                <button onClick={() => setLightbox(current.previewUrl2)}
+                        className="ml-auto flex items-center gap-1 text-brand hover:text-[#0090e6] font-medium">
+                  상세도 보기 →
+                </button>
+              </div>
+
+              {/* 수정 요청 내용 (있을 경우) */}
+              {current.revisionNote && (
+                <div className="mx-4 mb-3 mt-1 flex items-start gap-2 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3">
+                  <svg className="w-4 h-4 text-orange-500 flex-shrink-0 mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  <div>
+                    <p className="text-xs font-semibold text-orange-700 mb-1">수정 요청 내용</p>
+                    <p className="text-sm text-gray-700 leading-relaxed">{current.revisionNote}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* 승인 해제 사유 */}
+              {current.status === "승인해제" && (
+                <div className="mx-4 mb-3 flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                  <svg className="w-4 h-4 text-red-500 flex-shrink-0 mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div>
+                    <p className="text-xs font-semibold text-red-600 mb-1">승인 해제 사유</p>
+                    <p className="text-sm text-gray-700">새로운 발주서(V2) 업로드로 인해 기존 승인이 자동 해제됨. ({current.approvalCancelledAt})</p>
+                  </div>
+                </div>
+              )}
+
+              {/* 액션 버튼 */}
+              <div className="flex gap-2 px-4 pb-4 mt-auto">
+                <button
+                  onClick={handleApprove}
+                  disabled={current.status === "승인"}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-semibold transition-all ${
+                    current.status === "승인"
+                      ? "bg-emerald-100 text-emerald-500 cursor-default"
+                      : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  {current.status === "승인" ? "승인 완료" : "승인"}
+                </button>
+                <button
+                  onClick={() => setShowRevModal(true)}
+                  className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-semibold
+                             bg-red-500 hover:bg-red-600 text-white shadow-sm shadow-red-200 transition-all"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  수정 요청
+                </button>
+              </div>
+            </div>
+          )}
+          </>)}
+        </div>
+      </div>
+
+      {/* ── 수정 요청 사유 모달 ── */}
+      <Modal open={showRevModal} onClose={() => setShowRevModal(false)}>
+        <div className="px-6 py-5 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
+              <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-gray-800">상판 도면 수정 요청</h3>
+              <p className="text-xs text-gray-400">도면 V{activeVer} · 공장으로 전달됩니다</p>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">수정 요청 사유 <span className="text-red-500">*</span></label>
+            <textarea
+              value={revisionText}
+              onChange={e => setRevisionText(e.target.value)}
+              rows={4}
+              placeholder="예) 냉장고 우측 틈새 폭 340mm로 수정, 상부장 높이 2,300mm 재확인 필요"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-xl resize-none
+                         focus:outline-none focus:ring-2 focus:ring-red-400 focus:border-transparent
+                         text-gray-700 leading-relaxed placeholder:text-gray-300"
+            />
+          </div>
+          <div className="flex gap-3 justify-end">
+            <button onClick={() => setShowRevModal(false)}
+                    className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors">
+              취소
+            </button>
+            <button onClick={handleRevisionSubmit}
+                    className="px-4 py-2 text-sm font-bold text-white bg-red-500 hover:bg-red-600 rounded-xl transition-colors flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+              수정 요청 전송
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── 이미지 라이트박스 ── */}
+      <Modal open={!!lightbox} onClose={() => setLightbox(null)} maxW="max-w-4xl">
+        <div className="relative">
+          <div className="relative">
+            <img src={lightbox} alt="상판 도면 확대" className="w-full object-contain rounded-t-2xl max-h-[80vh]" />
+            {current?.status === "승인해제" && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none rounded-t-2xl">
+                <div className="absolute inset-0 bg-red-900/15 rounded-t-2xl"></div>
+                <div className="relative z-10" style={{ transform: "rotate(-22deg)" }}>
+                  <span className="text-red-600/65 font-black tracking-[0.3em] text-5xl"
+                        style={{ textShadow:"0 0 20px rgba(255,255,255,0.95)", WebkitTextStroke:"1px rgba(180,0,0,0.3)" }}>
+                    승인 취소됨
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="px-4 py-2 bg-gray-50 text-xs text-gray-400 text-center rounded-b-2xl">
+            바깥 클릭 또는 ESC로 닫기
+          </div>
+          <button onClick={() => setLightbox(null)}
+                  className="absolute top-3 right-3 w-8 h-8 bg-black/40 hover:bg-black/60 text-white rounded-full flex items-center justify-center transition-colors">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </Modal>
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   상판 탭 — Section C: 최종 확정 & 예외 처리
+═══════════════════════════════════════════════════════ */
+function SangpanSectionC({ data, onToast, onConfirmChange, sangpanProductionStarted = false }) {
+  const [approved, setApproved]   = useState(data.consumerApproved);
+  const [confirmed, setConfirmed] = useState(!!data.confirmedAt);
+
+  /* ── cross-tab 동기화: factory.html 등에서 데이터 변경 시 반영 ── */
+  useEffect(() => { setApproved(data.consumerApproved); }, [data.consumerApproved]);
+  useEffect(() => { setConfirmed(!!data.confirmedAt); },  [data.confirmedAt]);
+
+  /* ── approved 변경 → 부모에 알림 (mount 스킵) ── */
+  const didMountC = useRef(false);
+  useEffect(() => {
+    if (!didMountC.current) { didMountC.current = true; return; }
+    if (onConfirmChange) onConfirmChange({ consumerApproved: approved, confirmedAt: confirmed ? (data.confirmedAt || null) : null });
+  }, [approved]);
+
+  const handleConfirm = () => {
+    if (!approved) {
+      onToast({ type: "warning", title: "소비자 승인 필요", message: "소비자 승인 체크박스를 먼저 확인해주세요." });
+      return;
+    }
+    setConfirmed(true);
+    const now = new Date().toISOString();
+    if (onConfirmChange) onConfirmChange({ consumerApproved: true, confirmedAt: now });
+    onToast({ type: "success", title: "최종 발주 확정", message: "대시보드 상판 발주 상태가 [발주확정]으로 변경되었습니다.", duration: 5000 });
+  };
+
+  return (
+    <div className={`rounded-xl overflow-hidden border-2 bg-white ${confirmed ? "border-emerald-300" : "border-brand/20"}`}>
       <SectionHeader
-        color="green"
-        icon={<svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>}
-        title="소비자 승인 및 최종 발주 확정"
-        sub="소비자 동의 후 최종 발주를 확정합니다."
-        badge={confirmed ? (
-          <span className="inline-flex items-center gap-2 text-xs font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-3 py-1 rounded-full">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            발주 확정됨
-          </span>
-        ) : null}
+        color={confirmed ? "green" : "blue"}
+        icon={<svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>}
+        title="Section C · 소비자 최종 승인 및 발주 확정"
+        badge={confirmed ? <MokdaeStatusBadge status="발주확정" /> : null}
       />
 
       <div className="px-5 py-5 space-y-4">
-        {/* 체크박스 + 텍스트 */}
-        <label className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all
-          ${confirmed ? "opacity-50 cursor-not-allowed" : ""}
-          ${approved ? "border-emerald-400 bg-emerald-50" : "border-gray-200 bg-gray-50 hover:border-gray-300"}`}>
-          <input
-            type="checkbox"
-            checked={approved}
-            onChange={e => !confirmed && setApproved(e.target.checked)}
-            disabled={confirmed}
-            className="mt-1 w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-400 cursor-pointer"
-          />
-          <div className="flex-1">
-            <p className="text-sm font-semibold text-gray-800">소비자 도면 열람 및 최종 확인 완료</p>
-            <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-              소비자가 상판 도면과 소재 스펙을 직접 확인하였으며, 최종 발주에 동의하였음을 확인합니다.
+        {/* 소비자 승인 체크박스 */}
+        <label className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+          approved ? "border-brand bg-brand-weak" : "border-gray-200 bg-gray-50 hover:border-brand/30 hover:bg-brand-weak/40"
+        }`}>
+          <div className="relative mt-1 flex-shrink-0">
+            <input type="checkbox" checked={approved} onChange={e => setApproved(e.target.checked)}
+                   disabled={confirmed} className="sr-only" />
+            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+              approved ? "bg-brand border-brand" : "bg-white border-gray-400"
+            }`}>
+              {approved && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7"/></svg>}
+            </div>
+          </div>
+          <div>
+            <p className={`text-sm font-semibold ${approved ? "text-gray-800" : "text-gray-600"}`}>
+              소비자가 최종 도면을 확인하고 승인하였습니다.
             </p>
+            <p className="text-xs text-gray-400 mt-1">이 항목을 체크해야 최종 발주 확정 버튼이 활성화됩니다.</p>
           </div>
         </label>
 
-        {/* 긴급 조정 경고 문구 */}
-        {confirmed && (
-          <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-            <svg className="w-4 h-4 text-red-500 mt-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-            </svg>
-            <div className="text-xs text-red-700 leading-relaxed">
-              <p className="font-bold mb-1">발주 확정 이후 변경 주의</p>
-              최종 확정 이후 변경 사항이 발생할 경우, 영업 담당자를 통해 긴급 조정 요청을 진행해주세요.
-              추가 비용 및 납기 지연이 발생할 수 있습니다.
+        {/* 확정 버튼 */}
+        <button onClick={handleConfirm} disabled={confirmed}
+          className={`w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all duration-300 ${
+            confirmed
+              ? "bg-emerald-500 text-white cursor-default shadow-sm shadow-emerald-100"
+              : approved
+              ? "bg-brand hover:bg-[#0090e6] text-white shadow-sm  hover:-translate-y-0.5"
+              : "bg-gray-100 text-gray-400 cursor-not-allowed"
+          }`}>
+          {confirmed ? (
+            <><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>최종 발주 확정 완료</>
+          ) : (
+            <><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7"/></svg>최종 발주 확정</>
+          )}
+        </button>
+
+        {/* 🏭 제작 진행 중 배너 */}
+        {sangpanProductionStarted && confirmed && (
+          <div className="flex items-center gap-3 bg-teal-50 border-2 border-teal-200 rounded-xl px-4 py-3.5">
+            <div className="w-8 h-8 rounded-lg bg-teal-500 flex items-center justify-center flex-shrink-0">
+              <svg className="w-4.5 h-4.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
+            </div>
+            <div>
+              <p className="text-sm font-bold text-teal-800">공장에서 제작이 진행 중입니다</p>
+              <p className="text-xs text-teal-600 mt-0.5">제작 진행 중에는 발주 내용 수정이 제한됩니다. 공장에서 제작 중단 시 수정 가능합니다.</p>
             </div>
           </div>
         )}
 
-        {/* 확정 버튼 */}
-        <button
-          onClick={handleConfirm}
-          disabled={confirmed || confirming}
-          className={`w-full py-3 rounded-xl text-sm font-bold transition-all duration-300 flex items-center justify-center gap-2
-            ${confirmed
-              ? "btn-confirm-done text-white cursor-default shadow-sm"
-              : confirming
-              ? "bg-emerald-400 text-white cursor-wait"
-              : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm hover:shadow-sm hover:-translate-y-0.5"
-            }`}
-        >
-          {confirming ? (
-            <><svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>처리 중…</>
-          ) : confirmed ? (
-            <><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>최종 발주 확정됨</>
-          ) : (
-            <><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>최종 발주 확정</>
-          )}
-        </button>
+        {/* 긴급 조정 Alert */}
+        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+          <svg className="w-4 h-4 text-red-500 mt-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          <p className="text-xs text-red-700 leading-relaxed">
+            <span className="font-bold">⚠️ 주의</span>{"  "}공장 제작 시작 전까지는 내용 수정이 가능하며, 수정 시{" "}
+            <span className="font-bold text-red-800">'확정 후 조정(긴급)'</span>{" "}상태로 전환됩니다.
+          </p>
+        </div>
+
+        {/* 확정 후 조치 버튼들 */}
+        {confirmed && (
+          <div className="pt-1">
+            <p className="text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wide">발주 확정 후 조치</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => onToast({ type: "warning", title: "긴급 조정 요청", message: "긴급 조정 요청이 공장으로 전달되었습니다.", duration: 4000 })}
+                className="flex-1 flex items-center justify-center gap-2 py-2 text-sm font-semibold
+                           text-red-700 bg-red-50 hover:bg-red-100 border-2 border-red-200 hover:border-red-300
+                           rounded-xl transition-all"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+                긴급 조정
+              </button>
+              <button
+                onClick={() => document.getElementById("section-d-sangpan-anchor")?.scrollIntoView({ behavior: "smooth" })}
+                className="flex-1 flex items-center justify-center gap-2 py-2 text-sm font-semibold
+                           text-amber-700 bg-amber-50 hover:bg-amber-100 border-2 border-amber-200 hover:border-amber-300
+                           rounded-xl transition-all"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                재마감 요청 →
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 /* ═══════════════════════════════════════════════════════
-   상판 — Section D: 재마감 요청
+   상판 탭 — Section D: 재마감 요청 아코디언
 ═══════════════════════════════════════════════════════ */
-function SangpanSectionD({ claims, onToast }) {
-  const [open, setOpen] = useState(false);
-  const [newDate, setNewDate] = useState("");
-  const [newContent, setNewContent] = useState("");
-  const [sending, setSending] = useState(false);
-  const [localClaims, setLocalClaims] = useState(claims);
+function SangpanSectionD({ claims: initClaims, onToast, onClaimsChange }) {
+  const [open, setOpen]     = useState(true);
+  const [claims, setClaims] = useState(initClaims);
 
-  const handleSend = () => {
-    if (!newDate || !newContent.trim()) {
-      onToast({ type: "warning", title: "입력 항목 확인", message: "재마감 희망 일정과 요청 사항을 모두 입력해주세요." });
-      return;
-    }
-    setSending(true);
-    setTimeout(() => {
-      setSending(false);
-      const newClaim = {
-        id: Date.now(),
-        status: "재마감요청",
-        requestDate: newDate,
-        requestContent: newContent.trim(),
-        sentAt: new Date().toLocaleString("ko-KR", { hour12: false }).replace(/\. /g, "-").replace(".", "").slice(0, 16),
-        factoryReply: null,
-      };
-      setLocalClaims(prev => [newClaim, ...prev]);
-      setNewDate("");
-      setNewContent("");
-      setOpen(false);
-      onToast({ type: "success", title: "재마감 요청 전송", message: "재마감 요청이 공장으로 전송되었습니다.", duration: 5000 });
-    }, 1500);
-  };
+  /* ── 데이터 영속화: 변경 → 부모(App)로 전달 → localStorage 저장 ── */
+  const didMountD = useRef(false);
+  useEffect(() => {
+    if (!didMountD.current) { didMountD.current = true; return; }
+    if (onClaimsChange) onClaimsChange(claims);
+  }, [claims]);
+
+  /* ── cross-tab 동기화 ── */
+  useEffect(() => {
+    if (JSON.stringify(initClaims) !== JSON.stringify(claims)) setClaims(initClaims);
+  }, [JSON.stringify(initClaims)]);
+  const [newDate, setNewDate]       = useState("");
+  const [newContent, setNewContent] = useState("");
+  const [sending, setSending]       = useState(false);
 
   const statusStyle = {
     "재마감요청": "bg-orange-100 text-orange-700 border-orange-200",
@@ -3452,95 +3904,115 @@ function SangpanSectionD({ claims, onToast }) {
     "재마감확정": "bg-emerald-100 text-emerald-700 border-emerald-200",
   };
 
+  const handleSend = () => {
+    if (!newDate || !newContent.trim()) {
+      onToast({ type: "warning", title: "입력 확인", message: "희망 일정과 요청 사항을 모두 입력해주세요." });
+      return;
+    }
+    setSending(true);
+    setTimeout(() => {
+      setClaims(prev => [...prev, {
+        id: prev.length + 1, status: "재마감요청",
+        requestDate: newDate, requestContent: newContent,
+        sentAt: "2026-02-25 (방금)", factoryReply: null,
+      }]);
+      setNewDate(""); setNewContent(""); setSending(false);
+      onToast({ type: "success", title: "재마감 요청 전송 완료", message: "공장으로 재마감 요청이 전송되었습니다." });
+    }, 800);
+  };
+
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-      <button
-        className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
-        onClick={() => setOpen(o => !o)}
-      >
+    <div id="section-d-sangpan-anchor" className="rounded-xl overflow-hidden border-2 border-dashed border-gray-300 bg-white">
+      <button onClick={() => setOpen(p => !p)}
+              className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors">
         <div className="flex items-center gap-3">
-          <div className="w-6 h-6 rounded-lg bg-amber-500 flex items-center justify-center flex-shrink-0">
-            <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="w-7 h-7 rounded-lg bg-amber-100 border border-amber-200 flex items-center justify-center flex-shrink-0">
+            <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </div>
           <div className="text-left">
-            <h4 className="text-sm font-bold text-gray-800">재마감 요청</h4>
-            <p className="text-xs text-gray-400 mt-1">시공 후 마감 불량 발생 시 재마감 요청을 등록합니다.</p>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-gray-800">Section D · 현장 재마감 요청</span>
+              {claims.length > 0 && (
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">{claims.length}건</span>
+              )}
+            </div>
+            <p className="text-xs text-gray-400 mt-1">항상 추가 요청 가능 · 공장으로 직접 전송</p>
           </div>
-          {localClaims.length > 0 && (
-            <span className="flex items-center gap-1 text-xs font-bold text-amber-700 bg-amber-100 border border-amber-200 px-2 py-1 rounded-full">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-              재마감조정 {localClaims.length}건
+        </div>
+        <div className="flex items-center gap-2">
+          {claims.some(c => c.status === "재마감조정") && (
+            <span className="flex items-center gap-2 text-xs font-bold text-amber-700 bg-amber-100 border border-amber-200 px-2 py-1 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+              재마감 조정 (공장 확인 대기중)
             </span>
           )}
+          <svg className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+               fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
         </div>
-        <svg
-          className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
-          fill="none" viewBox="0 0 24 24" stroke="currentColor"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
       </button>
 
       {open && (
-        <div className="border-t border-gray-100">
-          {/* 기존 요청 목록 */}
-          {localClaims.length > 0 && (
-            <div className="px-5 pt-4 pb-3 space-y-3">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">요청 이력</p>
-              {localClaims.map(c => (
-                <div key={c.id} className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className={`inline-flex items-center gap-2 text-xs font-bold px-2 py-1 rounded-full border ${statusStyle[c.status] || "bg-gray-100 text-gray-500 border-gray-200"}`}>
-                      <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
-                      {c.status}
+        <div className="border-t border-gray-200">
+          {/* 기존 요청 */}
+          {claims.length > 0 && (
+            <div className="px-5 pt-4 pb-2 space-y-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">전송된 재마감 요청</p>
+              {claims.map(claim => (
+                <div key={claim.id} className="rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-100">
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <span className="font-semibold text-gray-700">#{claim.id}</span>
+                      <span>·</span>
+                      <span>희망일: <b className="text-gray-700">{claim.requestDate}</b></span>
+                      <span>·</span>
+                      <span>{claim.sentAt}</span>
+                    </div>
+                    <span className={`text-xs font-semibold px-2 py-1 rounded-full border ${statusStyle[claim.status] || ""}`}>
+                      {claim.status}
                     </span>
-                    <span className="text-xs text-gray-400">{c.sentAt} 발송</span>
                   </div>
-                  <div className="flex items-start gap-2 text-sm">
-                    <svg className="w-4 h-4 text-amber-500 mt-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    <div>
-                      <p className="text-xs text-gray-400 font-medium">희망 일정: <span className="text-gray-700 font-semibold">{c.requestDate}</span></p>
-                      <p className="text-gray-700 mt-1 leading-relaxed">{c.requestContent}</p>
-                    </div>
+                  <div className="px-4 py-3 bg-white space-y-2">
+                    <p className="text-sm text-gray-700">{claim.requestContent}</p>
+                    {claim.factoryReply && (
+                      <div className="flex items-start gap-2 bg-brand-weak border border-brand/10 rounded-lg px-3 py-2">
+                        <svg className="w-3.5 h-3.5 text-brand mt-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                        </svg>
+                        <p className="text-xs text-gray-600 leading-relaxed">{claim.factoryReply}</p>
+                      </div>
+                    )}
                   </div>
-                  {c.factoryReply && (
-                    <div className="flex items-start gap-2 bg-brand-weak border border-brand/10 rounded-lg px-3 py-2">
-                      <svg className="w-3.5 h-3.5 text-brand mt-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                      </svg>
-                      <p className="text-xs text-brand leading-relaxed">{c.factoryReply}</p>
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
           )}
+          {claims.length > 0 && <div className="mx-5 my-3 border-t border-dashed border-gray-200"></div>}
 
-          {/* 신규 요청 작성 */}
-          <div className="px-5 pb-5 space-y-3 border-t border-gray-100 pt-4">
+          {/* 신규 폼 */}
+          <div className="px-5 pb-5 space-y-3">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
-              <svg className="w-3.5 h-3.5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-3.5 h-3.5 text-brand" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
               </svg>신규 재마감 요청 작성
             </p>
             <div>
               <label className="block text-xs text-gray-500 font-medium mb-1.5">재마감 희망 일정</label>
               <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent" />
+                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent" />
             </div>
             <div>
               <label className="block text-xs text-gray-500 font-medium mb-1.5">요청 사항</label>
               <textarea value={newContent} onChange={e => setNewContent(e.target.value)} rows={3}
-                placeholder="공장에 전달할 재마감 요청 내용을 입력하세요."
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent text-gray-700 leading-relaxed placeholder:text-gray-300" />
+                        placeholder="공장에 전달할 재마감 요청 내용을 입력하세요."
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent text-gray-700 leading-relaxed placeholder:text-gray-300" />
             </div>
             <div className="flex justify-end">
               <button onClick={handleSend} disabled={sending}
-                className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 rounded-xl shadow-sm transition-all">
+                      className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 rounded-xl shadow-sm transition-all">
                 {sending ? (
                   <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>전송 중…</>
                 ) : (
@@ -3558,22 +4030,40 @@ function SangpanSectionD({ claims, onToast }) {
 /* ═══════════════════════════════════════════════════════
    상판 탭 — 전체 레이아웃
 ═══════════════════════════════════════════════════════ */
-function SangpanTab({ onToast }) {
+function SangpanTab({ onToast, onStatusChange, silcheukImages, onSangpanSchedule, sangpanData = {}, onSangpanVersionsChange, onDrawingChange, silcheukFinalDate = "", onSectionCChange, onClaimsChange, sangpanProductionStarted = false }) {
+  const sd = sangpanData;
   return (
     <div className="p-5 space-y-5 max-w-4xl">
 
       <SangpanSectionA
-        versions={[]}
-        activeVer={1}
+        versions={sd.versions || []}
+        activeVer={(sd.versions && sd.versions.length > 0) ? sd.versions[sd.versions.length - 1].versionNo : 1}
         onToast={onToast}
+        onStatusChange={onStatusChange}
+        silcheukImages={silcheukImages || []}
+        onSangpanSchedule={onSangpanSchedule}
+        uploadedFiles={sd.uploadedFiles || {}}
+        onVersionsChange={onSangpanVersionsChange}
+        silcheukFinalDate={silcheukFinalDate}
+        sangpanProductionStarted={sangpanProductionStarted}
       />
       <SangpanSectionB
-        drawingVersions={[]}
-        activeVer={1}
+        drawingVersions={sd.drawingVersions || []}
+        activeVer={(sd.drawingVersions && sd.drawingVersions.length > 0) ? sd.drawingVersions[sd.drawingVersions.length - 1].versionNo : 1}
         onToast={onToast}
+        onDrawingChange={onDrawingChange}
       />
-      <SangpanSectionC data={{ consumerApproved: false, confirmedAt: null }} onToast={onToast} />
-      <SangpanSectionD claims={[]} onToast={onToast} />
+      <SangpanSectionC
+        data={{ consumerApproved: sd.consumerApproved || false, confirmedAt: sd.confirmedAt || null }}
+        onToast={onToast}
+        onConfirmChange={onSectionCChange}
+        sangpanProductionStarted={sangpanProductionStarted}
+      />
+      <SangpanSectionD
+        claims={sd.claims || []}
+        onToast={onToast}
+        onClaimsChange={onClaimsChange}
+      />
 
       <div className="h-4"></div>
     </div>
@@ -3583,23 +4073,40 @@ function SangpanTab({ onToast }) {
 /* ═══════════════════════════════════════════════════════
    목대 탭 — 전체 레이아웃
 ═══════════════════════════════════════════════════════ */
-function MokdaeTab({ onToast, onStatusChange }) {
+function MokdaeTab({ onToast, onStatusChange, silcheukImages, onMokdaeSchedule, mokdaeData = {}, onMokdaeVersionsChange, onCadChange, silcheukFinalDate = "", onSectionCChange, onClaimsChange, mokdaeProductionStarted = false }) {
+  const md = mokdaeData;
   return (
     <div className="p-5 space-y-5 max-w-4xl">
 
       <MokdaeSectionA
-        versions={[]}
-        activeVer={1}
+        versions={md.versions || []}
+        activeVer={(md.versions && md.versions.length > 0) ? md.versions[md.versions.length - 1].versionNo : 1}
         onToast={onToast}
         onStatusChange={onStatusChange}
+        silcheukImages={silcheukImages || []}
+        onMokdaeSchedule={onMokdaeSchedule}
+        uploadedFiles={md.uploadedFiles || {}}
+        onVersionsChange={onMokdaeVersionsChange}
+        silcheukFinalDate={silcheukFinalDate}
+        mokdaeProductionStarted={mokdaeProductionStarted}
       />
       <MokdaeSectionB
-        cadVersions={[]}
-        activeVer={1}
+        cadVersions={md.cadVersions || []}
+        activeVer={(md.cadVersions && md.cadVersions.length > 0) ? md.cadVersions[md.cadVersions.length - 1].versionNo : 1}
         onToast={onToast}
+        onCadChange={onCadChange}
       />
-      <MokdaeSectionC data={{ consumerApproved: false, confirmedAt: null }} onToast={onToast} />
-      <MokdaeSectionD claims={[]}    onToast={onToast} />
+      <MokdaeSectionC
+        data={{ consumerApproved: md.consumerApproved || false, confirmedAt: md.confirmedAt || null }}
+        onToast={onToast}
+        onConfirmChange={onSectionCChange}
+        mokdaeProductionStarted={mokdaeProductionStarted}
+      />
+      <MokdaeSectionD
+        claims={md.claims || []}
+        onToast={onToast}
+        onClaimsChange={onClaimsChange}
+      />
 
       <div className="h-4"></div>
     </div>
@@ -3650,7 +4157,7 @@ function getTabStatusStyle(text) {
   return "text-gray-400";
 }
 
-function RightPanel({ onToast, onScheduleUnlock, caseStatus, onStatusChange, silcheukData, onProposalsSend, onFinalConfirm }) {
+function RightPanel({ onToast, onScheduleUnlock, caseStatus, onStatusChange, silcheukData, onProposalsSend, onFinalConfirm, onResultConfirm, onMokdaeSchedule, mokdaeData, onMokdaeVersionsChange, onCadChange, onSectionCChange, onClaimsChange, mokdaeProductionStarted, onSangpanSchedule, sangpanData, onSangpanVersionsChange, onDrawingChange, onSangpanSectionCChange, onSangpanClaimsChange, sangpanProductionStarted }) {
   const [activeTab, setActiveTab] = useState("목대");
 
   return (
@@ -3694,15 +4201,58 @@ function RightPanel({ onToast, onScheduleUnlock, caseStatus, onStatusChange, sil
             onStatusChange={onStatusChange}
             onProposalsSend={onProposalsSend}
             onFinalConfirm={onFinalConfirm}
+            resultDone={silcheukData?.resultDone || false}
           />
           <hr className="border-gray-200" />
-          <SectionResult data={{ images: [], memo: "", isDone: false }} onToast={onToast} />
+          <SectionResult
+            data={{
+              images: [
+                ...(silcheukData?.uploadResult?.drawings || []).map(f => ({ ...f, label: f.name, category: "도면" })),
+                ...(silcheukData?.uploadResult?.photos   || []).map(f => ({ ...f, label: f.name, category: "사진" })),
+              ],
+              memo:        silcheukData?.uploadResult?.memo        || "",
+              submittedAt: silcheukData?.uploadResult?.submittedAt || null,
+              isDone:      silcheukData?.resultDone || false,
+            }}
+            onToast={onToast}
+            onConfirm={onResultConfirm}
+          />
         </div>
         <div style={{ display: activeTab !== "목대" ? "none" : "" }}>
-          <MokdaeTab onToast={onToast} onStatusChange={onStatusChange} />
+          <MokdaeTab
+            onToast={onToast}
+            onStatusChange={onStatusChange}
+            silcheukImages={[
+              ...(silcheukData?.uploadResult?.drawings || []).map(f => ({ ...f, label: f.name, category: "도면" })),
+              ...(silcheukData?.uploadResult?.photos   || []).map(f => ({ ...f, label: f.name, category: "사진" })),
+            ]}
+            onMokdaeSchedule={onMokdaeSchedule}
+            mokdaeData={mokdaeData}
+            onMokdaeVersionsChange={onMokdaeVersionsChange}
+            onCadChange={onCadChange}
+            silcheukFinalDate={silcheukData?.finalDate || ""}
+            onSectionCChange={onSectionCChange}
+            onClaimsChange={onClaimsChange}
+            mokdaeProductionStarted={mokdaeProductionStarted}
+          />
         </div>
         <div style={{ display: activeTab !== "상판" ? "none" : "" }}>
-          <SangpanTab onToast={onToast} />
+          <SangpanTab
+            onToast={onToast}
+            onStatusChange={onStatusChange}
+            silcheukImages={[
+              ...(silcheukData?.uploadResult?.drawings || []).map(f => ({ ...f, label: f.name, category: "도면" })),
+              ...(silcheukData?.uploadResult?.photos   || []).map(f => ({ ...f, label: f.name, category: "사진" })),
+            ]}
+            onSangpanSchedule={onSangpanSchedule}
+            sangpanData={sangpanData}
+            onSangpanVersionsChange={onSangpanVersionsChange}
+            onDrawingChange={onDrawingChange}
+            silcheukFinalDate={silcheukData?.finalDate || ""}
+            onSectionCChange={onSangpanSectionCChange}
+            onClaimsChange={onSangpanClaimsChange}
+            sangpanProductionStarted={sangpanProductionStarted}
+          />
         </div>
         <div style={{ display: activeTab !== "기기" ? "none" : "" }}>
           <GigiTab onToast={onToast} />
@@ -3754,27 +4304,55 @@ function App() {
   const [isNew, setIsNew] = useState(isNewCaseMode);
 
   /* 실측 일정 잠금: 실측 탭 고객 전달 완료 후 최종 일정 자동 입력 */
-  const [scheduleEditable, setScheduleEditable] = useState(false);
-  const [silcheukFinalDate, setSilcheukFinalDate] = useState("");
+  /* scheduleEditable 제거: 실측·목대 일정 표시가 *FinalDate 데이터 기반으로 전환됨 */
+
+  /* engineer.html이 localStorage를 수정하면 caseData 자동 갱신
+     - storage 이벤트: 다른 탭에서 변경됐을 때
+     - visibilitychange: 이 탭이 다시 활성화될 때 (같은 origin 탭 전환 시) */
+  useEffect(() => {
+    if (!caseId) return;
+    const refresh = () => {
+      const fresh = loadItemById(caseId);
+      if (fresh) setCaseData(fresh);
+    };
+    const onStorage = (e) => {
+      if (e.key !== LS_KEY) return;
+      refresh();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    window.addEventListener('storage', onStorage);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [caseId]);
 
   /* 저장 핸들러 — localStorage 동기화 후 헤더도 갱신 */
-  const handleSaveCase = useCallback((updated) => {
+  const handleSaveCase = useCallback((formData) => {
     /* 신규 현장: 중복 상담 ID 검사 */
     if (isNew) {
       const allItems = loadAllItems() || [];
-      if (allItems.some(i => i.id === updated.id)) {
+      if (allItems.some(i => i.id === formData.id)) {
         addToast({ type: "error", title: "저장 실패", message: "동일한 상담 ID로 등록된 현장이 있습니다." });
         return false;
       }
-      persistItem(updated);
-      sessionStorage.setItem('CURRENT_CASE_ID', updated.id);
+      persistItem(formData);
+      sessionStorage.setItem('CURRENT_CASE_ID', formData.id);
       setIsNew(false);
-      setCaseData(updated);
+      setCaseData(formData);
       addToast({ type: "success", title: "저장 완료", message: "새 현장이 등록되었습니다." });
       return true;
     }
-    persistItem(updated);
-    setCaseData(updated);
+    /* 기존 현장: LeftPanel form 데이터(기본정보·일정·상태)를 기존 caseData에 병합
+       → silcheuk*, mokdae* 등 RightPanel이 관리하는 필드를 보존 */
+    setCaseData(prev => {
+      const merged = { ...prev, ...formData };
+      persistItem(merged);
+      return merged;
+    });
     addToast({ type: "success", title: "저장 완료", message: "변경사항이 대시보드에 반영됩니다." });
     return true;
   }, [addToast, isNew]);
@@ -3794,10 +4372,26 @@ function App() {
     });
   }, [isNew]);
 
-  /* 최종 일정 확정 (고객 안내 전달 완료) → localStorage 영속화 → engineer.html 연동 */
+  /* 실측 결과 검수 완료 → silcheuk 상태 "완료" + localStorage 영속화 */
+  const handleResultConfirm = useCallback(() => {
+    if (isNew) return;
+    setCaseData(prev => {
+      if (!prev) return prev;
+      const updated = {
+        ...prev,
+        silcheukResultDone: true,
+        status: { ...prev.status, silcheuk: "완료" },
+      };
+      persistItem(updated);
+      return updated;
+    });
+  }, [isNew]);
+
+  /* 최종 일정 확정 (고객 안내 전달 완료) → localStorage 영속화 → engineer.html 연동
+     핵심: schedule.silcheuk 에도 동일 일정을 기록해야
+     index.html 대시보드와 detail.html 공정일정 좌측패널에 자동 반영됨 */
   const handleFinalConfirm = useCallback((date, time) => {
     if (isNew) return;
-    setSilcheukFinalDate(date); // LeftPanel 일정 자동 입력용
     setCaseData(prev => {
       if (!prev) return prev;
       const updated = {
@@ -3805,7 +4399,143 @@ function App() {
         silcheukFinalized:  true,
         silcheukFinalDate:  date,
         silcheukFinalTime:  time,
+        schedule: {
+          ...(prev.schedule || {}),
+          silcheuk: date,          // ← 공정일정·대시보드 공용 필드에 확정일 기록
+        },
       };
+      persistItem(updated);
+      return updated;
+    });
+  }, [isNew]);
+
+  /* 목대 발주서 공장 승인 확정 일정 → schedule.mokdae에 기록 → LeftPanel·index.html 자동 반영 */
+  const handleMokdaeSchedule = useCallback((date) => {
+    if (isNew) return;
+    setCaseData(prev => {
+      if (!prev) return prev;
+      /* 동일 값이면 무한 루프 방지 */
+      if (prev.mokdaeFinalDate === date) return prev;
+      const updated = {
+        ...prev,
+        mokdaeFinalDate: date,
+        schedule: { ...(prev.schedule || {}), mokdae: date },
+      };
+      persistItem(updated);
+      return updated;
+    });
+  }, [isNew]);
+
+  /* 목대 발주서 버전·파일 변경 → localStorage 영속화 */
+  const handleMokdaeVersionsChange = useCallback((versions, uploadedFiles) => {
+    if (isNew) return;
+    setCaseData(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, mokdaeVersions: versions, mokdaeUploadedFiles: uploadedFiles };
+      persistItem(updated);
+      return updated;
+    });
+  }, [isNew]);
+
+  /* CAD 도면 버전 변경 → localStorage 영속화 */
+  const handleCadVersionsChange = useCallback((cadVersions) => {
+    if (isNew) return;
+    setCaseData(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, cadVersions };
+      persistItem(updated);
+      return updated;
+    });
+  }, [isNew]);
+
+  /* 목대 SectionC 소비자 승인 / 발주 확정 → localStorage 영속화 */
+  const handleSectionCChange = useCallback(({ consumerApproved, confirmedAt }) => {
+    if (isNew) return;
+    setCaseData(prev => {
+      if (!prev) return prev;
+      const updated = {
+        ...prev,
+        mokdaeConsumerApproved: consumerApproved,
+        mokdaeConfirmedAt: confirmedAt,
+      };
+      if (confirmedAt && prev.status?.mokdae !== "제작진행") {
+        updated.status = { ...updated.status, mokdae: "발주확정" };
+      }
+      persistItem(updated);
+      return updated;
+    });
+  }, [isNew]);
+
+  /* 목대 SectionD 재마감 요청 → localStorage 영속화 */
+  const handleClaimsChange = useCallback((claims) => {
+    if (isNew) return;
+    setCaseData(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, mokdaeClaims: claims };
+      persistItem(updated);
+      return updated;
+    });
+  }, [isNew]);
+
+  /* ═══ 상판 Handlers (목대와 동일 패턴) ═══ */
+
+  const handleSangpanSchedule = useCallback((date) => {
+    if (isNew) return;
+    setCaseData(prev => {
+      if (!prev) return prev;
+      if (prev.sangpanFinalDate === date) return prev;
+      const updated = {
+        ...prev,
+        sangpanFinalDate: date,
+        schedule: { ...(prev.schedule || {}), sangpan: date },
+      };
+      persistItem(updated);
+      return updated;
+    });
+  }, [isNew]);
+
+  const handleSangpanVersionsChange = useCallback((versions, uploadedFiles) => {
+    if (isNew) return;
+    setCaseData(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, sangpanVersions: versions, sangpanUploadedFiles: uploadedFiles };
+      persistItem(updated);
+      return updated;
+    });
+  }, [isNew]);
+
+  const handleSangpanDrawingChange = useCallback((drawingVersions) => {
+    if (isNew) return;
+    setCaseData(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, sangpanDrawingVersions: drawingVersions };
+      persistItem(updated);
+      return updated;
+    });
+  }, [isNew]);
+
+  const handleSangpanSectionCChange = useCallback(({ consumerApproved, confirmedAt }) => {
+    if (isNew) return;
+    setCaseData(prev => {
+      if (!prev) return prev;
+      const updated = {
+        ...prev,
+        sangpanConsumerApproved: consumerApproved,
+        sangpanConfirmedAt: confirmedAt,
+      };
+      if (confirmedAt && prev.status?.sangpan !== "제작진행") {
+        updated.status = { ...updated.status, sangpan: "발주확정" };
+      }
+      persistItem(updated);
+      return updated;
+    });
+  }, [isNew]);
+
+  const handleSangpanClaimsChange = useCallback((claims) => {
+    if (isNew) return;
+    setCaseData(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, sangpanClaims: claims };
       persistItem(updated);
       return updated;
     });
@@ -3883,19 +4613,53 @@ function App() {
 
       {/* ── Split View ── */}
       <div className="flex flex-1 min-h-0">
-        <LeftPanel data={caseData} onSave={handleSaveCase} isNew={isNew} scheduleEditable={scheduleEditable} silcheukFinalDate={silcheukFinalDate} />
+        <LeftPanel data={caseData} onSave={handleSaveCase} isNew={isNew} silcheukFinalDate={caseData.silcheukFinalDate || ""} mokdaeFinalDate={caseData.mokdaeFinalDate || ""} />
         <RightPanel
           onToast={addToast}
-          onScheduleUnlock={() => { setScheduleEditable(true); }}
+          onScheduleUnlock={() => { /* no-op: 일정 표시가 *FinalDate 데이터 기반으로 전환됨 */ }}
           caseStatus={caseData.status}
           onStatusChange={handleStatusChange}
           silcheukData={{
-            proposals:   caseData.silcheukProposals  || [],
-            sent:        caseData.silcheukSent        || false,
-            engResponse: caseData.silcheukEngResponse || null,
+            proposals:    caseData.silcheukProposals    || [],
+            sent:         caseData.silcheukSent          || false,
+            engResponse:  caseData.silcheukEngResponse  || null,
+            finalized:    caseData.silcheukFinalized     || false,
+            finalDate:    caseData.silcheukFinalDate     || "",
+            finalTime:    caseData.silcheukFinalTime     || "",
+            uploadResult: caseData.silcheukUploadResult  || null,
+            resultDone:   caseData.silcheukResultDone    || false,
           }}
           onProposalsSend={handleProposalsSend}
           onFinalConfirm={handleFinalConfirm}
+          onResultConfirm={handleResultConfirm}
+          onMokdaeSchedule={handleMokdaeSchedule}
+          mokdaeData={{
+            versions:         caseData.mokdaeVersions         || [],
+            uploadedFiles:    caseData.mokdaeUploadedFiles     || {},
+            cadVersions:      caseData.cadVersions             || [],
+            consumerApproved: caseData.mokdaeConsumerApproved  || false,
+            confirmedAt:      caseData.mokdaeConfirmedAt       || null,
+            claims:           caseData.mokdaeClaims            || [],
+          }}
+          onMokdaeVersionsChange={handleMokdaeVersionsChange}
+          onCadChange={handleCadVersionsChange}
+          onSectionCChange={handleSectionCChange}
+          onClaimsChange={handleClaimsChange}
+          mokdaeProductionStarted={caseData.mokdaeProductionStarted || false}
+          onSangpanSchedule={handleSangpanSchedule}
+          sangpanData={{
+            versions:         caseData.sangpanVersions          || [],
+            uploadedFiles:    caseData.sangpanUploadedFiles      || {},
+            drawingVersions:  caseData.sangpanDrawingVersions    || [],
+            consumerApproved: caseData.sangpanConsumerApproved   || false,
+            confirmedAt:      caseData.sangpanConfirmedAt        || null,
+            claims:           caseData.sangpanClaims             || [],
+          }}
+          onSangpanVersionsChange={handleSangpanVersionsChange}
+          onDrawingChange={handleSangpanDrawingChange}
+          onSangpanSectionCChange={handleSangpanSectionCChange}
+          onSangpanClaimsChange={handleSangpanClaimsChange}
+          sangpanProductionStarted={caseData.sangpanProductionStarted || false}
         />
       </div>
 
