@@ -248,6 +248,33 @@ export type Database = {
           },
         ]
       }
+      supplier_accounts: {
+        Row: {
+          approved: boolean
+          created_at: string
+          email: string
+          id: string
+          process_type: Database["public"]["Enums"]["process_type"]
+          user_id: string
+        }
+        Insert: {
+          approved?: boolean
+          created_at?: string
+          email: string
+          id?: string
+          process_type: Database["public"]["Enums"]["process_type"]
+          user_id: string
+        }
+        Update: {
+          approved?: boolean
+          created_at?: string
+          email?: string
+          id?: string
+          process_type?: Database["public"]["Enums"]["process_type"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -256,7 +283,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      process_type: "engineer" | "factory" | "supplier" | "countertop"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -383,6 +410,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      process_type: ["engineer", "factory", "supplier", "countertop"],
+    },
   },
 } as const

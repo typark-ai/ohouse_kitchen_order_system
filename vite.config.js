@@ -11,6 +11,7 @@ export default defineConfig({
         engineer: 'engineer.html',
         supplier: 'supplier.html',
         countertop: 'countertop.html',
+        'portal-login': 'portal-login.html',
       },
     },
   },

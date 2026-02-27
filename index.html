@@ -136,6 +136,7 @@
       '/countertop': '/countertop.html',
       '/supplier': '/supplier.html',
       '/engineer': '/engineer.html',
+      '/portal-login': '/portal-login.html',
     };
     const target = routeAliasMap[path];
     if (target) {
@@ -819,12 +820,14 @@ function DeleteConfirmModal({ open, count, onConfirm, onCancel }) {
 function App() {
   const [items, setItems]             = useState([]);
   const [loading, setLoading]         = useState(true);
-  const [tab, setTab]                 = useState("active");     // "active" | "archived" | "cancelled"
+  const [tab, setTab]                 = useState("active");     // "active" | "archived" | "cancelled" | "approvals"
   const [selectedIds, setSelectedIds] = useState([]);
   const [search, setSearch]           = useState("");
   const [managerFilter, setManagerFilter] = useState("");
   const [dbModalOpen, setDbModalOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [supplierAccounts, setSupplierAccounts] = useState([]);
+  const [pendingCount, setPendingCount] = useState(0);
 
   /* DB primary load + gigi_store 병합 */
   const refreshFromDB = useCallback(async () => {
@@ -869,6 +872,22 @@ function App() {
 
   useEffect(() => { refreshFromDB(); }, [refreshFromDB]);
 
+  /* 공급사 계정 로드 */
+  const loadSupplierAccounts = useCallback(async () => {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/supplier_accounts?select=*&order=created_at.desc`, {
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSupplierAccounts(data);
+        setPendingCount(data.filter(a => !a.approved).length);
+      }
+    } catch (e) { console.warn("supplier_accounts load failed:", e); }
+  }, []);
+
+  useEffect(() => { loadSupplierAccounts(); }, [loadSupplierAccounts]);
+
   /* 탭 전환 시 DB 새로고침 */
   useEffect(() => {
     const onVisible = () => { if (document.visibilityState === 'visible') refreshFromDB(); };
@@ -878,7 +897,7 @@ function App() {
 
   /* 실시간 누락 대비 폴링 fallback */
   useEffect(() => {
-    const timer = setInterval(() => { refreshFromDB(); }, 20000);
+    const timer = setInterval(() => { refreshFromDB(); loadSupplierAccounts(); }, 20000);
     return () => clearInterval(timer);
   }, [refreshFromDB]);
 
@@ -960,6 +979,24 @@ function App() {
     await refreshFromDB();
     setSelectedIds([]);
   };
+
+  /* 공급사 계정 승인 */
+  const handleApproveAccount = async (accountId) => {
+    await fetch(`${SUPABASE_URL}/rest/v1/supplier_accounts?id=eq.${accountId}`, {
+      method: "PATCH", headers: SB_HEADERS, body: JSON.stringify({ approved: true }),
+    });
+    loadSupplierAccounts();
+  };
+
+  /* 공급사 계정 삭제 (거절) */
+  const handleRejectAccount = async (accountId) => {
+    await fetch(`${SUPABASE_URL}/rest/v1/supplier_accounts?id=eq.${accountId}`, {
+      method: "DELETE", headers: SB_HEADERS,
+    });
+    loadSupplierAccounts();
+  };
+
+  const PROCESS_LABELS = { engineer: "실측기사", factory: "목대", supplier: "기기", countertop: "상판" };
 
   /* 임박 일정 카운트 (헤더용) — 취소된 현장 제외 */
   const urgentCount = useMemo(
@@ -1064,6 +1101,28 @@ function App() {
                 </span>
               )}
             </button>
+            <button
+              onClick={() => { handleTabChange("approvals"); loadSupplierAccounts(); }}
+              className={`relative flex items-center gap-2 px-4 h-10 body-md font-semibold transition-all border-b-2 -mb-px ${
+                tab === "approvals"
+                  ? "border-brand text-brand"
+                  : "border-transparent text-muted-foreground hover:text-gray-800"
+              }`}
+            >
+              가입 승인
+              {pendingCount > 0 && tab !== "approvals" && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-white text-[10px] font-bold animate-pulse">
+                  {pendingCount}
+                </span>
+              )}
+              {pendingCount > 0 && (
+                <span className={`body-sm px-2 py-0.5 rounded-full font-bold transition-colors ${
+                  tab === "approvals" ? "bg-red-500 text-white" : "bg-red-100 text-red-600"
+                }`}>
+                  {pendingCount}
+                </span>
+              )}
+            </button>
           </div>
 
           {/* 현장 추가 버튼 */}
@@ -1081,7 +1140,63 @@ function App() {
           </button>
         </div>
 
+        {/* ── 가입 승인 패널 ── */}
+        {tab === "approvals" && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-200">
+              <h2 className="text-base font-bold text-gray-900">공급사 가입 승인 관리</h2>
+              <p className="text-xs text-gray-500 mt-1">가입 신청한 공급사 계정을 승인하거나 거절할 수 있습니다.</p>
+            </div>
+            {supplierAccounts.length === 0 ? (
+              <div className="py-16 text-center text-gray-400">
+                <svg className="w-10 h-10 mx-auto mb-2 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span className="text-sm">가입 신청이 없습니다.</span>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {supplierAccounts.map(acc => (
+                  <div key={acc.id} className="flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold ${
+                        acc.approved ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                      }`}>
+                        {acc.email?.[0]?.toUpperCase() || "?"}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{acc.email}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{PROCESS_LABELS[acc.process_type] || acc.process_type}</span>
+                          <span className="text-xs text-gray-400">{new Date(acc.created_at).toLocaleDateString("ko-KR")}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {acc.approved ? (
+                        <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg">승인됨</span>
+                      ) : (
+                        <>
+                          <button onClick={() => handleApproveAccount(acc.id)}
+                            className="text-xs font-semibold text-white bg-brand hover:bg-[#0090e6] px-3 py-1.5 rounded-lg transition-colors">
+                            승인
+                          </button>
+                          <button onClick={() => handleRejectAccount(acc.id)}
+                            className="text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 px-3 py-1.5 rounded-lg transition-colors">
+                            거절
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── 테이블 컨테이너 ── */}
+        {tab !== "approvals" && (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
 
           {/* 테이블 헤더 바 */}
@@ -1091,98 +1206,44 @@ function App() {
                 <h2 className="text-base font-bold text-gray-900">
                   {tab === "active" ? "진행 중 현장 목록" : tab === "archived" ? "아카이빙(완료) 현장 목록" : "취소된 현장 목록"}
                 </h2>
-                {tab === "archived" && (
-                  <span className="body-sm bg-gray-100 text-muted-foreground px-2 py-0.5 rounded-full font-medium">완료 처리된 현장</span>
-                )}
-                {tab === "cancelled" && (
-                  <span className="body-sm bg-destructive-weak text-red-600 border border-red-200 px-2 py-0.5 rounded-full font-medium">취소 처리된 현장</span>
-                )}
+                <span className="body-sm text-muted-foreground bg-gray-100 px-2 py-0.5 rounded-full">{filtered.length}건</span>
               </div>
-              <p className="body-sm text-muted-foreground mt-1">
-                총 <span className="font-semibold text-gray-700">{filtered.length}</span>건
-                {filtered.length !== tabData.length && ` (전체 ${tabData.length}건 중 필터)`}
-                &nbsp;·&nbsp;행 클릭 시 상세 페이지로 이동해요
-              </p>
             </div>
-            <button className="btn-outline flex items-center gap-1.5 body-sm px-3 h-8 rounded-lg flex-shrink-0">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              엑셀 내보내기
-            </button>
           </div>
 
-          {/* ── 액션 바 (체크 선택 시 등장) ── */}
+          {/* 액션 바 */}
           {selectedIds.length > 0 && (
-            <div className="flex items-center gap-3 px-4 py-2 bg-brand-weak border-b border-brand/20">
-              <div className="flex items-center gap-2">
-                <div className="w-5 h-5 bg-brand rounded flex items-center justify-center flex-shrink-0">
-                  <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                <span className="text-sm font-semibold text-brand">
-                  {selectedIds.length}건 선택됨
-                </span>
-              </div>
+            <div className="px-4 py-2.5 bg-brand-weak border-b border-brand/20 flex items-center gap-3">
+              <span className="body-sm text-brand font-semibold">{selectedIds.length}건 선택</span>
               <div className="w-px h-4 bg-brand/20"></div>
-
-              {/* 취소됨 탭: 복원만 */}
               {tab === "cancelled" ? (
-                <button
-                  onClick={handleRestore}
-                  className="flex items-center gap-2 px-4 h-8 rounded-lg text-xs font-semibold bg-brand hover:bg-[#0090e6] text-white shadow-sm transition-all active:scale-[0.97]"
-                >
+                <button onClick={handleRestore}
+                  className="flex items-center gap-1.5 px-3 h-7 rounded-lg body-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                   </svg>
-                  진행 중으로 복원
+                  복원
                 </button>
               ) : (
                 <>
-                  {/* 진행중 ↔ 아카이빙 이동 */}
-                  <button
-                    onClick={handleMove}
-                    className={`flex items-center gap-2 px-4 h-8 rounded-lg text-xs font-semibold transition-all active:scale-[0.97] ${
-                      tab === "active"
-                        ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
-                        : "bg-brand hover:bg-[#0090e6] text-white shadow-sm"
-                    }`}
-                  >
-                    {tab === "active" ? (
-                      <>
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        완료된 현장으로 이동
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                        </svg>
-                        진행 중으로 이동
-                      </>
-                    )}
-                  </button>
-                  {/* 현장 삭제 버튼 */}
-                  <button
-                    onClick={() => setDeleteConfirmOpen(true)}
-                    className="flex items-center gap-2 px-4 h-8 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white shadow-sm transition-all active:scale-[0.97]"
-                  >
+                  <button onClick={handleMove}
+                    className="flex items-center gap-1.5 px-3 h-7 rounded-lg body-sm font-semibold bg-gray-800 text-white hover:bg-gray-700 transition-colors">
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
                     </svg>
-                    현장 삭제
+                    {tab === "active" ? "아카이빙" : "진행 중으로 이동"}
+                  </button>
+                  <button onClick={() => setDeleteConfirmOpen(true)}
+                    className="flex items-center gap-1.5 px-3 h-7 rounded-lg body-sm font-semibold btn-destructive transition-colors">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    삭제
                   </button>
                 </>
               )}
-
-              <button
-                onClick={() => setSelectedIds([])}
-                className="ml-auto text-xs text-gray-500 hover:text-gray-800 transition-colors flex items-center gap-1"
-              >
+              <button onClick={() => setSelectedIds([])}
+                className="ml-auto flex items-center gap-1 px-2 h-7 rounded-lg body-sm text-muted-foreground hover:bg-gray-100 transition-colors">
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -1212,6 +1273,7 @@ function App() {
             <span>행 클릭 시 상세 페이지로 이동 · 상태 뱃지는 읽기 전용</span>
           </div>
         </div>
+        )}
       </div>
     </div>
   );
