@@ -1598,12 +1598,14 @@ function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast
      → App이 schedule.mokdae + mokdaeFinalDate에 저장 → LeftPanel·index.html 자동 반영 */
   useEffect(() => {
     if (!onMokdaeSchedule) return;
-    const approved = versions
-      .filter(v => !v.isNew && v.factoryChecked)
+    // 최신 제출 버전(isNew=false) 중 versionNo가 가장 큰 것만 확인
+    const submitted = versions
+      .filter(v => !v.isNew)
       .sort((a, b) => b.versionNo - a.versionNo);
-    const date = (approved.length > 0 && approved[0].mokdaeDate) || "";
+    const latest = submitted.length > 0 ? submitted[0] : null;
+    const date = (latest && latest.factoryChecked && latest.mokdaeDate) || "";
     onMokdaeSchedule(date);
-  }, [versions]);
+  }, [versions, initVersions]);
 
   /* ── 데이터 영속화: 변경 → 부모(App)로 전달 → localStorage 저장 ── */
   const didMountA = useRef(false);
@@ -3542,12 +3544,14 @@ function SangpanSectionA({ versions: initVersions, activeVer: initActive, onToas
      → App이 schedule.mokdae + mokdaeFinalDate에 저장 → LeftPanel·index.html 자동 반영 */
   useEffect(() => {
     if (!onSangpanSchedule) return;
-    const approved = versions
-      .filter(v => !v.isNew && v.factoryChecked)
+    // 최신 제출 버전(isNew=false) 중 versionNo가 가장 큰 것만 확인
+    const submitted = versions
+      .filter(v => !v.isNew)
       .sort((a, b) => b.versionNo - a.versionNo);
-    const date = (approved.length > 0 && approved[0].sangpanDate) || "";
+    const latest = submitted.length > 0 ? submitted[0] : null;
+    const date = (latest && latest.factoryChecked && latest.sangpanDate) || "";
     onSangpanSchedule(date);
-  }, [versions]);
+  }, [versions, initVersions]);
 
   /* ── 데이터 영속화: 변경 → 부모(App)로 전달 → localStorage 저장 ── */
   const didMountA = useRef(false);
