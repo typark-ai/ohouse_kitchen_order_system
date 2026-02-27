@@ -87,6 +87,11 @@ function loadCases() {
   try { const r = localStorage.getItem(LS_KEY); return r ? JSON.parse(r) : []; } catch { return []; }
 }
 
+function filterDispatchedSangpanCases(cases) {
+  const rows = Array.isArray(cases) ? cases : [];
+  return rows.filter(c => c?.dispatchedSangpan === true || c?.dispatched_sangpan === true);
+}
+
 const SUPABASE_URL = "https://ykifurzrrbjrgjrznimk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlraWZ1cnpycmJqcmdqcnpuaW1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMjE3NTcsImV4cCI6MjA4NzY5Nzc1N30.BVTlrG_Q_cXqj6qOa_rZPXrCs7MhwuR9o8koncGoUU0";
 const STORAGE_BUCKET = "case-files";
@@ -144,6 +149,7 @@ function dbRowToCase(r) {
     sangpanProductionStarted: r.sangpan_production_started || false,
     sangpanProductionStartedAt: r.sangpan_production_started_at || null,
     sangpanFinalDate: r.sangpan_final_date || "",
+    dispatchedSangpan: r.dispatched_sangpan || false,
     silcheukUploadResult: r.silcheuk_upload_result || null,
     silcheukResultDone: r.silcheuk_result_done || false,
   };
@@ -1302,19 +1308,20 @@ function App() {
   const { toasts, add: addToast, remove: removeToast } = useToast();
 
   useEffect(() => {
-    setCases(loadCases());
+    setCases(filterDispatchedSangpanCases(loadCases()));
     (async () => {
       const fromDb = await loadAllCasesFromDB();
-      if (fromDb && fromDb.length > 0) {
-        setCases(fromDb);
-        try { localStorage.setItem(LS_KEY, JSON.stringify(fromDb)); } catch {}
+      if (fromDb) {
+        const safeCases = filterDispatchedSangpanCases(fromDb);
+        setCases(safeCases);
+        try { localStorage.setItem(LS_KEY, JSON.stringify(safeCases)); } catch {}
       }
     })();
   }, []);
 
   /* cross-tab 동기화 */
   useEffect(() => {
-    const refresh = () => setCases(loadCases());
+    const refresh = () => setCases(filterDispatchedSangpanCases(loadCases()));
     const onStorage = (e) => { if (e.key === LS_KEY) refresh(); };
     const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
     window.addEventListener('storage', onStorage);
