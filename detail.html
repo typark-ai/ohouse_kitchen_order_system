@@ -3105,7 +3105,7 @@ const GIGI_CATEGORY_ICONS = {
 };
 const DEFAULT_CAT_STYLE = { icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>, color: "text-gray-600", bg: "bg-gray-100" };
 
-function GigiTab({ onToast, onGigiOrderSubmit, gigiOrderData }) {
+function GigiTab({ onToast, onGigiOrderSubmit, gigiOrderData, onStatusChange }) {
   const { gigiDb, loading, dbSource } = useGigiDb();
   const [selections, setSelections] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -3118,6 +3118,15 @@ function GigiTab({ onToast, onGigiOrderSubmit, gigiOrderData }) {
   const isRejected  = orderStatus === "발주요청반려";
   const isLocked    = isSubmitted || isApproved; // 수정 불가
   const canSubmit   = !isLocked; // 최초 또는 반려 후 재발주 가능
+
+  /* 기기 상태를 부모에 전달 */
+  useEffect(() => {
+    if (!onStatusChange) return;
+    if (isApproved) onStatusChange("gigi", "발주확정");
+    else if (isRejected) onStatusChange("gigi", "발주요청반려");
+    else if (isSubmitted) onStatusChange("gigi", "승인 대기");
+    else onStatusChange("gigi", "발주요청대기");
+  }, [orderStatus]);
 
   /* gigiDb 로드 완료 시 selections 초기화 */
   useEffect(() => {
@@ -5279,7 +5288,7 @@ function RightPanel({ onToast, onScheduleUnlock, caseStatus, onStatusChange, sil
           />
         </div>
         <div style={{ display: activeTab !== "기기" ? "none" : "" }}>
-          <GigiTab onToast={onToast} onGigiOrderSubmit={onGigiOrderSubmit} gigiOrderData={gigiOrderData} />
+          <GigiTab onToast={onToast} onGigiOrderSubmit={onGigiOrderSubmit} gigiOrderData={gigiOrderData} onStatusChange={onStatusChange} />
         </div>
       </div>
     </main>
