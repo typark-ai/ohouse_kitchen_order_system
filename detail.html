@@ -1359,11 +1359,17 @@ function MokdaeSectionA({ versions: initVersions, activeVer: initActive, onToast
   }, []);
 
   /* 발주 상태 변경 시 부모에 알림 → 대시보드 자동 연동
-     단, 제작진행/발주확정/확정후조정(긴급) 등 상위 상태는 덮어쓰지 않음 */
+     제작진행/발주확정/확정후조정(긴급) 등 상위 상태를 적극 반영 */
   useEffect(() => {
     if (!onStatusChange) return;
-    if (mokdaeProductionStarted) return; // 제작진행 상태는 factory에서 관리
-    if (mokdaeConfirmedAt) return; // 발주확정 이후 상태는 SectionC/factory에서 관리
+    if (mokdaeProductionStarted) {
+      onStatusChange("mokdae", "제작진행");
+      return;
+    }
+    if (mokdaeConfirmedAt) {
+      onStatusChange("mokdae", "발주확정");
+      return;
+    }
     onStatusChange("mokdae", badgeStatus);
   }, [badgeStatus, mokdaeProductionStarted, mokdaeConfirmedAt]);
 
@@ -3244,11 +3250,17 @@ function SangpanSectionA({ versions: initVersions, activeVer: initActive, onToas
   }, []);
 
   /* 발주 상태 변경 시 부모에 알림 → 대시보드 자동 연동
-     단, 제작진행/발주확정/확정후조정(긴급) 등 상위 상태는 덮어쓰지 않음 */
+     제작진행/발주확정/확정후조정(긴급) 등 상위 상태를 적극 반영 */
   useEffect(() => {
     if (!onStatusChange) return;
-    if (sangpanProductionStarted) return; // 제작진행 상태는 countertop에서 관리
-    if (sangpanConfirmedAt) return; // 발주확정 이후 상태는 SectionC/countertop에서 관리
+    if (sangpanProductionStarted) {
+      onStatusChange("sangpan", "제작진행");
+      return;
+    }
+    if (sangpanConfirmedAt) {
+      onStatusChange("sangpan", "발주확정");
+      return;
+    }
     onStatusChange("sangpan", badgeStatus);
   }, [badgeStatus, sangpanProductionStarted, sangpanConfirmedAt]);
 
