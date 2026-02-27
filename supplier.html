@@ -81,29 +81,14 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 /* ═══════════════════════════════════════
-   localStorage + DB
+   DB Primary
 ═══════════════════════════════════════ */
 const LS_CASES = 'JIKSIGONG_DATA';
 const TODAY_STR = new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" });
 
-function loadCases() {
-  try { const r = localStorage.getItem(LS_CASES); return r ? JSON.parse(r) : []; } catch { return []; }
-}
-function saveCases(items) {
-  try { localStorage.setItem(LS_CASES, JSON.stringify(items)); } catch {}
-}
-function updateCase(caseId, updater) {
-  const cases = loadCases();
-  const idx = cases.findIndex(c => c.id === caseId);
-  if (idx < 0) return;
-  cases[idx] = updater(cases[idx]);
-  saveCases(cases);
-  syncCaseToDB(cases[idx]);
-  return cases;
-}
-
 const SUPABASE_URL = "https://ykifurzrrbjrgjrznimk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlraWZ1cnpycmJqcmdqcnpuaW1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMjE3NTcsImV4cCI6MjA4NzY5Nzc1N30.BVTlrG_Q_cXqj6qOa_rZPXrCs7MhwuR9o8koncGoUU0";
+const SB_HEADERS = { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json" };
 
 function dbRowToCase(r) {
   return {
@@ -114,33 +99,55 @@ function dbRowToCase(r) {
   };
 }
 
-function caseToDbRow(c) {
-  return {
-    id: c.id, customer: c.customer || null, phone: c.phone || null, address: c.address || null, manager: c.manager || null,
-    schedule: c.schedule || {}, status: c.status || {},
-    archived: c.archived || false, cancelled: c.cancelled || false,
-    gigi_final_date: c.gigiFinalDate || null,
-  };
-}
-
 async function loadAllCasesFromDB() {
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/cases?select=*&order=created_at.desc`, {
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
+    const [casesRes, gigiRes] = await Promise.all([
+      fetch(`${SUPABASE_URL}/rest/v1/cases?select=*&order=created_at.desc`, {
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
+      }),
+      fetch(`${SUPABASE_URL}/rest/v1/gigi_store?select=case_id,data`, {
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
+      }),
+    ]);
+    if (!casesRes.ok) throw new Error("cases fetch failed");
+    const cases = (await casesRes.json()).map(dbRowToCase);
+    const gigiRows = gigiRes.ok ? await gigiRes.json() : [];
+    // gigi_store 데이터를 cases에 병합
+    const gigiMap = {};
+    gigiRows.forEach(g => { gigiMap[g.case_id] = g.data; });
+    return cases.map(c => {
+      const gigiData = gigiMap[c.id];
+      if (gigiData) {
+        return {
+          ...c,
+          gigiOrderData: gigiData,
+          status: { ...c.status, gigi: gigiData.status || c.status.gigi },
+          gigiFinalDate: c.gigiFinalDate || gigiData.requestedDate || "",
+        };
+      }
+      return c;
     });
-    if (!res.ok) throw new Error("fetch failed");
-    return (await res.json()).map(dbRowToCase);
   } catch (e) { console.warn("DB load failed:", e); return null; }
 }
 
-async function syncCaseToDB(caseData) {
+async function patchCaseInDB(caseId, fields) {
   try {
-    await fetch(`${SUPABASE_URL}/rest/v1/cases`, {
-      method: "POST",
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" },
-      body: JSON.stringify(caseToDbRow(caseData)),
+    await fetch(`${SUPABASE_URL}/rest/v1/cases?id=eq.${encodeURIComponent(caseId)}`, {
+      method: "PATCH",
+      headers: SB_HEADERS,
+      body: JSON.stringify(fields),
     });
-  } catch (e) { console.warn("DB sync failed:", e); }
+  } catch (e) { console.warn("DB patch failed:", e); }
+}
+
+async function upsertGigiStore(caseId, data) {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/gigi_store`, {
+      method: "POST",
+      headers: { ...SB_HEADERS, "Prefer": "resolution=merge-duplicates" },
+      body: JSON.stringify({ case_id: caseId, data }),
+    });
+  } catch (e) { console.warn("gigi_store upsert failed:", e); }
 }
 
 /* ═══════════════════════════════════════
@@ -885,33 +892,31 @@ function DetailPage({ caseData, onBack, onApprove, onReject, onToast }) {
 ═══════════════════════════════════════ */
 function App() {
   const [cases, setCases]     = useState([]);
+  const [loading, setLoading] = useState(true);
   const [view, setView]       = useState("list"); // "list" | "detail"
   const [selectedId, setSelectedId] = useState(null);
   const { toasts, add: addToast, remove: removeToast } = useToast();
 
-  const refresh = useCallback(() => {
-    const loaded = loadCases();
-    setCases(loaded);
-    // Also try DB
-    (async () => {
+  const refresh = useCallback(async () => {
+    try {
       const fromDb = await loadAllCasesFromDB();
-      if (fromDb && fromDb.length > 0) {
+      if (fromDb) {
         setCases(fromDb);
-        try { localStorage.setItem('JIKSIGONG_DATA', JSON.stringify(fromDb)); } catch {}
       }
-    })();
-    return loaded;
+    } catch (e) {
+      console.warn("Refresh failed:", e);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => { refresh(); }, [refresh]);
 
   /* cross-tab 동기화 */
   useEffect(() => {
-    const onStorage = (e) => { if (e.key === LS_CASES) refresh(); };
     const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
-    window.addEventListener('storage', onStorage);
     document.addEventListener('visibilitychange', onVisible);
-    return () => { window.removeEventListener('storage', onStorage); document.removeEventListener('visibilitychange', onVisible); };
+    return () => { document.removeEventListener('visibilitychange', onVisible); };
   }, [refresh]);
 
   const handleSelect = useCallback((id) => {
@@ -925,48 +930,57 @@ function App() {
   }, [refresh]);
 
   const handleArchive = useCallback((ids) => {
-    const all = loadCases();
-    ids.forEach(id => {
-      const idx = all.findIndex(c => c.id === id);
-      if (idx >= 0) all[idx].archived = true;
-    });
-    saveCases(all);
-    setCases(all);
+    setCases(prev => prev.map(c => ids.includes(c.id) ? { ...c, archived: true } : c));
+    ids.forEach(id => patchCaseInDB(id, { archived: true }));
   }, []);
 
   const handleRestore = useCallback((ids) => {
-    const all = loadCases();
-    ids.forEach(id => {
-      const idx = all.findIndex(c => c.id === id);
-      if (idx >= 0) all[idx].archived = false;
-    });
-    saveCases(all);
-    setCases(all);
+    setCases(prev => prev.map(c => ids.includes(c.id) ? { ...c, archived: false } : c));
+    ids.forEach(id => patchCaseInDB(id, { archived: false }));
   }, []);
 
   const handleApprove = useCallback((caseId) => {
-    const updated = updateCase(caseId, (c) => ({
-      ...c,
-      gigiOrderData: { ...c.gigiOrderData, status: "발주확정" },
-      status: { ...c.status, gigi: "발주확정" },
-      gigiFinalDate: c.gigiOrderData?.requestedDate || "",
-      schedule: { ...(c.schedule || {}), gigi: c.gigiOrderData?.requestedDate || "" },
+    setCases(prev => prev.map(c => {
+      if (c.id !== caseId) return c;
+      const updatedGigi = { ...c.gigiOrderData, status: "발주확정" };
+      const finalDate = c.gigiOrderData?.requestedDate || "";
+      // DB: cases 테이블 + gigi_store 동시 업데이트
+      patchCaseInDB(caseId, {
+        status: { ...c.status, gigi: "발주확정" },
+        gigi_final_date: finalDate,
+        schedule: { ...(c.schedule || {}), gigi: finalDate },
+      });
+      upsertGigiStore(caseId, updatedGigi);
+      return {
+        ...c,
+        gigiOrderData: updatedGigi,
+        status: { ...c.status, gigi: "발주확정" },
+        gigiFinalDate: finalDate,
+        schedule: { ...(c.schedule || {}), gigi: finalDate },
+      };
     }));
-    if (updated) setCases(updated);
   }, []);
 
   const handleReject = useCallback((caseId, reason) => {
-    const updated = updateCase(caseId, (c) => ({
-      ...c,
-      gigiOrderData: {
+    setCases(prev => prev.map(c => {
+      if (c.id !== caseId) return c;
+      const updatedGigi = {
         ...c.gigiOrderData,
         status: "발주요청반려",
         rejectionReason: reason,
         rejectedAt: new Date().toISOString(),
-      },
-      status: { ...c.status, gigi: "발주요청반려" },
+      };
+      // DB: cases 테이블 + gigi_store 동시 업데이트
+      patchCaseInDB(caseId, {
+        status: { ...c.status, gigi: "발주요청반려" },
+      });
+      upsertGigiStore(caseId, updatedGigi);
+      return {
+        ...c,
+        gigiOrderData: updatedGigi,
+        status: { ...c.status, gigi: "발주요청반려" },
+      };
     }));
-    if (updated) setCases(updated);
   }, []);
 
   const selectedCase = cases.find(c => c.id === selectedId);
