@@ -18,57 +18,120 @@ export type Database = {
         Row: {
           address: string | null
           archived: boolean
+          cad_versions: Json | null
           cancelled: boolean
           created_at: string
           customer: string | null
+          gigi_final_date: string | null
           id: string
           manager: string | null
+          mokdae_claims: Json | null
+          mokdae_confirmed_at: string | null
+          mokdae_consumer_approved: boolean
+          mokdae_final_date: string | null
+          mokdae_production_started: boolean
+          mokdae_production_started_at: string | null
+          mokdae_uploaded_files: Json | null
+          mokdae_versions: Json | null
           phone: string | null
+          sangpan_claims: Json | null
+          sangpan_confirmed_at: string | null
+          sangpan_consumer_approved: boolean
+          sangpan_drawing_versions: Json | null
+          sangpan_final_date: string | null
+          sangpan_production_started: boolean
+          sangpan_production_started_at: string | null
+          sangpan_uploaded_files: Json | null
+          sangpan_versions: Json | null
           schedule: Json
           silcheuk_eng_response: Json | null
           silcheuk_final_date: string | null
           silcheuk_final_time: string | null
           silcheuk_finalized: boolean
           silcheuk_proposals: Json
+          silcheuk_result_done: boolean
           silcheuk_sent: boolean
+          silcheuk_upload_result: Json | null
           status: Json
           updated_at: string
         }
         Insert: {
           address?: string | null
           archived?: boolean
+          cad_versions?: Json | null
           cancelled?: boolean
           created_at?: string
           customer?: string | null
+          gigi_final_date?: string | null
           id: string
           manager?: string | null
+          mokdae_claims?: Json | null
+          mokdae_confirmed_at?: string | null
+          mokdae_consumer_approved?: boolean
+          mokdae_final_date?: string | null
+          mokdae_production_started?: boolean
+          mokdae_production_started_at?: string | null
+          mokdae_uploaded_files?: Json | null
+          mokdae_versions?: Json | null
           phone?: string | null
+          sangpan_claims?: Json | null
+          sangpan_confirmed_at?: string | null
+          sangpan_consumer_approved?: boolean
+          sangpan_drawing_versions?: Json | null
+          sangpan_final_date?: string | null
+          sangpan_production_started?: boolean
+          sangpan_production_started_at?: string | null
+          sangpan_uploaded_files?: Json | null
+          sangpan_versions?: Json | null
           schedule?: Json
           silcheuk_eng_response?: Json | null
           silcheuk_final_date?: string | null
           silcheuk_final_time?: string | null
           silcheuk_finalized?: boolean
           silcheuk_proposals?: Json
+          silcheuk_result_done?: boolean
           silcheuk_sent?: boolean
+          silcheuk_upload_result?: Json | null
           status?: Json
           updated_at?: string
         }
         Update: {
           address?: string | null
           archived?: boolean
+          cad_versions?: Json | null
           cancelled?: boolean
           created_at?: string
           customer?: string | null
+          gigi_final_date?: string | null
           id?: string
           manager?: string | null
+          mokdae_claims?: Json | null
+          mokdae_confirmed_at?: string | null
+          mokdae_consumer_approved?: boolean
+          mokdae_final_date?: string | null
+          mokdae_production_started?: boolean
+          mokdae_production_started_at?: string | null
+          mokdae_uploaded_files?: Json | null
+          mokdae_versions?: Json | null
           phone?: string | null
+          sangpan_claims?: Json | null
+          sangpan_confirmed_at?: string | null
+          sangpan_consumer_approved?: boolean
+          sangpan_drawing_versions?: Json | null
+          sangpan_final_date?: string | null
+          sangpan_production_started?: boolean
+          sangpan_production_started_at?: string | null
+          sangpan_uploaded_files?: Json | null
+          sangpan_versions?: Json | null
           schedule?: Json
           silcheuk_eng_response?: Json | null
           silcheuk_final_date?: string | null
           silcheuk_final_time?: string | null
           silcheuk_finalized?: boolean
           silcheuk_proposals?: Json
+          silcheuk_result_done?: boolean
           silcheuk_sent?: boolean
+          silcheuk_upload_result?: Json | null
           status?: Json
           updated_at?: string
         }
